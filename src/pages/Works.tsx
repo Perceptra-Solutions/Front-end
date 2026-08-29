@@ -1,12 +1,17 @@
-import { Camera, Layers, MapPin, Siren, UserCog } from 'lucide-react'
+import * as React from 'react'
+import { Camera, Layers, MapPin, Pencil, Plus, Siren, UserCog } from 'lucide-react'
 import { PageBody, PageHeader } from '@/components/shared/PageHeader'
-import { Carregando, ErroConexao, SemDadoNoBackend, Vazio } from '@/components/shared/EstadoPagina'
+import { Carregando, ErroConexao, SemDadoNoBackend } from '@/components/shared/EstadoPagina'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { ObraFormDialog } from '@/components/works/ObraFormDialog'
 import { useRecurso } from '@/hooks/useRecurso'
 import { listarCameras, listarLocais, listarObras, listarUsuarios } from '@/lib/api/cadastros'
+import { garantirUsuario } from '@/lib/api/client'
+import { useAppStore } from '@/store/AppStore'
 import { listarNaoConformidades } from '@/lib/api/naoConformidades'
-import type { StatusObra } from '@/lib/api/types'
+import type { ObraApi, StatusObra, UsuarioApi } from '@/lib/api/types'
 import { formatDate } from '@/lib/utils'
 
 const STATUS: Record<StatusObra, { rotulo: string; variant: 'info' | 'warning' | 'success' | 'default' }> = {
@@ -19,21 +24,26 @@ const STATUS: Record<StatusObra, { rotulo: string; variant: 'info' | 'warning' |
 const STATUS_ABERTOS = ['ABERTA', 'EM_CORRECAO', 'AGUARDANDO_VERIFICACAO']
 
 export default function Works() {
+  const { recarregarTudo } = useAppStore()
+  const [formAberto, setFormAberto] = React.useState(false)
+  const [emEdicao, setEmEdicao] = React.useState<ObraApi | null>(null)
+
   const { dados, carregando, erro, recarregar } = useRecurso(async (signal) => {
     // Uma leitura de cada agregado, depois tudo é contado por obra em memória:
     // é mais barato que N requisições por obra e mantém a tela consistente
     // (todos os números vêm do mesmo instante).
-    const [obras, locais, cameras, usuarios, ncs] = await Promise.all([
+    const [obras, locais, cameras, usuarios, ncs, usuario] = await Promise.all([
       listarObras(signal),
       listarLocais({}, signal),
       listarCameras({}, signal),
       listarUsuarios({}, signal),
       listarNaoConformidades({ tamanho: 100 }, signal),
+      garantirUsuario(),
     ])
 
     const nomePorUsuario = new Map(usuarios.itens.map((u) => [u.id, u]))
 
-    return obras.itens.map((obra) => {
+    const linhas = obras.itens.map((obra) => {
       const camerasDaObra = cameras.itens.filter((c) => c.obraId === obra.id)
       const ncsDaObra = ncs.itens.filter((nc) => nc.obraId === obra.id)
       const responsavel = obra.responsavelTecnicoId ? nomePorUsuario.get(obra.responsavelTecnicoId) : undefined
@@ -48,10 +58,26 @@ export default function Works() {
         responsavel,
       }
     })
+
+    return {
+      linhas,
+      ehGestor: usuario?.papel === 'GESTOR',
+      engenheiros: usuarios.itens.filter((u) => u.papel === 'ENGENHEIRO' && u.ativo) as UsuarioApi[],
+    }
   })
 
-  const linhas = dados ?? []
+  const linhas = dados?.linhas ?? []
+  const ehGestor = dados?.ehGestor ?? false
   const totalCameras = linhas.reduce((s, l) => s + l.camerasTotal, 0)
+
+  const abrirNova = () => {
+    setEmEdicao(null)
+    setFormAberto(true)
+  }
+  const abrirEdicao = (obra: ObraApi) => {
+    setEmEdicao(obra)
+    setFormAberto(true)
+  }
 
   return (
     <>
@@ -63,13 +89,35 @@ export default function Works() {
           { label: 'Obras', value: carregando ? '—' : String(linhas.length) },
           { label: 'Câmeras', value: carregando ? '—' : String(totalCameras) },
         ]}
+        actions={
+          ehGestor ? (
+            <Button variant="navy" size="sm" onClick={abrirNova}>
+              <Plus className="h-3.5 w-3.5" />
+              Nova obra
+            </Button>
+          ) : undefined
+        }
       />
 
       <PageBody className="space-y-5">
         {carregando && <Carregando texto="Carregando obras…" />}
         {erro && !carregando && <ErroConexao mensagem={erro} aoTentarNovamente={recarregar} />}
         {!carregando && !erro && linhas.length === 0 && (
-          <Vazio titulo="Nenhuma obra cadastrada" descricao="Cadastre a primeira obra para o sistema começar a operar." />
+          <div className="rounded-md border border-dashed border-graphite-200 bg-card px-6 py-16 text-center shadow-panel">
+            <Layers className="mx-auto h-6 w-6 text-graphite-300" />
+            <p className="mt-3 text-[14px] font-600 text-graphite-800">Nenhuma obra cadastrada</p>
+            <p className="mx-auto mt-1 max-w-md text-[13px] text-graphite-500">
+              {ehGestor
+                ? 'A obra é a raiz de tudo: locais, câmeras, detecções e não conformidades pendem dela.'
+                : 'Só o gestor pode cadastrar obras.'}
+            </p>
+            {ehGestor && (
+              <Button variant="navy" size="sm" className="mt-5" onClick={abrirNova}>
+                <Plus className="h-3.5 w-3.5" />
+                Cadastrar primeira obra
+              </Button>
+            )}
+          </div>
         )}
 
         {!carregando && !erro && linhas.length > 0 && (
@@ -94,9 +142,14 @@ export default function Works() {
                           </span>
                         </p>
                       </div>
-                      <Badge variant={st.variant} className="shrink-0">
-                        {st.rotulo}
-                      </Badge>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge variant={st.variant}>{st.rotulo}</Badge>
+                        {ehGestor && (
+                          <Button variant="ghost" size="icon-sm" onClick={() => abrirEdicao(obra)} title="Editar obra">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
 
                     <CardContent className="space-y-4">
@@ -179,6 +232,20 @@ export default function Works() {
           </>
         )}
       </PageBody>
+
+      <ObraFormDialog
+        aberto={formAberto}
+        obra={emEdicao}
+        engenheiros={dados?.engenheiros ?? []}
+        aoFechar={() => setFormAberto(false)}
+        aoSalvar={() => {
+          recarregar()
+          // A obra é o contexto de quase toda a aplicação (topbar, dashboard,
+          // mapa, gêmeo digital). Cadastrar a primeira precisa refletir fora
+          // desta tela, não só nela.
+          recarregarTudo()
+        }}
+      />
     </>
   )
 }

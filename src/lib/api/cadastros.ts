@@ -1,5 +1,5 @@
-import { apiGet } from './client'
-import type { CameraApi, LocalApi, ModeloIaApi, ObraApi, PaginaApi, UsuarioApi } from './types'
+import { apiGet, apiPatch, apiPost } from './client'
+import type { CameraApi, LocalApi, ModeloIaApi, ObraApi, PaginaApi, StatusObra, UsuarioApi } from './types'
 
 export interface RequisitoNormaApi {
   id: string
@@ -32,4 +32,52 @@ export function listarModelosIa(signal?: AbortSignal) {
 
 export function listarRequisitosNorma(signal?: AbortSignal) {
   return apiGet<PaginaApi<RequisitoNormaApi>>('/requisitos-norma', { tamanho: 100 }, signal)
+}
+
+// ----------------------------------------------------------------- escrita
+//
+// Todas exigem GESTOR. Não há DELETE em nenhum cadastro — decisão do
+// projeto: as FKs são RESTRICT e protegem quem tem dependente, então o
+// caminho é desativar/atualizar, nunca apagar.
+
+export interface CriarObraInput {
+  codigo: string
+  nome: string
+  endereco?: string
+  cidade?: string
+  /** Sigla de 2 letras; o backend normaliza para maiúsculo. */
+  uf?: string
+  status?: StatusObra
+  responsavelTecnicoId?: string
+  /** AAAA-MM-DD. */
+  inicioPrevisto?: string
+  fimPrevisto?: string
+}
+
+export function criarObra(input: CriarObraInput) {
+  return apiPost<ObraApi>('/obras', input)
+}
+
+/** `codigo` pode mudar; a unicidade é do banco e volta como 409. */
+export function atualizarObra(id: string, input: Partial<CriarObraInput>) {
+  return apiPatch<ObraApi>(`/obras/${id}`, input)
+}
+
+export interface CriarLocalInput {
+  obraId: string
+  tipo: TipoLocal
+  nome: string
+  codigo?: string
+}
+
+export const TIPOS_LOCAL = ['BLOCO', 'PAVIMENTO', 'UNIDADE', 'AMBIENTE', 'AREA_COMUM', 'EXTERNO'] as const
+export type TipoLocal = (typeof TIPOS_LOCAL)[number]
+
+export function criarLocal(input: CriarLocalInput) {
+  return apiPost<LocalApi>('/locais', input)
+}
+
+/** `obraId` não entra: um local não troca de obra depois de criado. */
+export function atualizarLocal(id: string, input: Partial<Omit<CriarLocalInput, 'obraId'>>) {
+  return apiPatch<LocalApi>(`/locais/${id}`, input)
 }

@@ -85,6 +85,12 @@ interface AppStoreValue {
   sendToVerification: (planId: string) => Promise<void>
   approveVerification: (planId: string, note: string) => Promise<void>
   rejectVerification: (planId: string, note: string) => Promise<void>
+  /**
+   * Relê tudo do backend. Necessário depois de cadastrar algo que muda o
+   * contexto global — a primeira obra, por exemplo: sem isto a topbar
+   * continua dizendo "sem obra cadastrada" até um F5.
+   */
+  recarregarTudo: () => void
   resetDemo: () => void
   kpis: {
     /** NCs encerradas / total (exclui canceladas). Derivado, e o rótulo diz isso. */
@@ -412,6 +418,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     sendToVerification,
     approveVerification,
     rejectVerification,
+    recarregarTudo: () => void carregarTudo(),
     resetDemo: () => void carregarTudo(),
     kpis,
   }
