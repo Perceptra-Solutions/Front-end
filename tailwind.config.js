@@ -8,8 +8,11 @@ export default {
     container: { center: true, padding: '1.5rem', screens: { '2xl': '1600px' } },
     extend: {
       fontFamily: {
-        sans: ['"Space Grotesk"', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
-        display: ['"Space Grotesk"', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+        // `display` aponta para a mesma família: a hierarquia agora vem de
+        // tamanho e peso, não de troca de fonte. Mantido como alias para não
+        // reescrever as ~200 ocorrências de `font-display` nas telas.
+        display: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'Menlo', 'Consolas', 'monospace'],
       },
       colors: {

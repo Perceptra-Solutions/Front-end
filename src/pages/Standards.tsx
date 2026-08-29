@@ -82,7 +82,7 @@ export default function Standards() {
         {carregando && <Carregando texto="Carregando base normativa…" />}
         {erro && !carregando && <ErroConexao mensagem={erro} aoTentarNovamente={recarregar} />}
         {!carregando && !erro && normas.length === 0 && (
-          <Vazio titulo="Nenhum requisito cadastrado" descricao="Rode o seed do backend (npm run db:seed) para popular a demo." />
+          <Vazio titulo="Nenhum requisito cadastrado" descricao="Cadastre os requisitos de norma usados para classificar as não conformidades." />
         )}
 
         {!carregando &&

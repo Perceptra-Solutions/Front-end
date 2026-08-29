@@ -112,9 +112,14 @@
     );
   }
 
-  /* rótulo técnico: PV-04, CAM-07, NC-00124 */
+  /*
+   * Rótulo de campo. Passou de mono+caixa-alta para Inter em caixa normal:
+   * a Inter tem altura-x maior, e caixa-alta com tracking largo (herança da
+   * Space Grotesk) ficava pesada e difícil de varrer numa tela densa. O mono
+   * fica reservado ao VALOR técnico (.tech-value), não ao rótulo.
+   */
   .tech-label {
-    @apply font-mono text-[10px] uppercase tracking-[0.1em] text-graphite-400;
+    @apply text-[11px] font-500 tracking-[0.01em] text-graphite-400;
   }
 
   .tech-value {
@@ -156,13 +161,28 @@
   }
 
   .panel-title {
-    @apply font-display text-[12.5px] font-600 uppercase tracking-[0.1em] text-graphite-700;
+    @apply text-[13px] font-600 tracking-[-0.005em] text-graphite-800;
   }
 }
 
 @layer utilities {
+  /*
+   * Pesos numéricos usados pelas telas. `font-500` (20 usos) e `font-700`
+   * (8 usos) NÃO existiam: só `font-600` estava definido, então os outros
+   * dois eram classe inválida — silenciosamente sem efeito no JSX, e erro
+   * de build quando usados em `@apply`. Foi assim que apareceram.
+   */
+  .font-400 {
+    font-weight: 400;
+  }
+  .font-500 {
+    font-weight: 500;
+  }
   .font-600 {
     font-weight: 600;
+  }
+  .font-700 {
+    font-weight: 700;
   }
   .text-balance {
     text-wrap: balance;

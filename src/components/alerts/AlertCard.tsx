@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { SeverityBadge, AlertStatusBadge } from '@/components/shared/StatusBadge'
 import { EvidenciaImage } from '@/components/shared/EvidenciaImage'
 import { DetectionFrame } from '@/components/cameras/DetectionFrame'
@@ -72,9 +71,15 @@ export function AlertCard({ alert, className }: AlertCardProps) {
 
       {/* conteúdo */}
       <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
+        {/*
+          Densidade reduzida: antes eram até 3 badges, um título em caixa-alta,
+          uma descrição e uma grade de 4 colunas com rótulo em cima de cada
+          valor. Sobrou o que decide a triagem — severidade, o que foi
+          detectado, onde e com que confiança — numa linha só de metadado.
+          O resto está na tela de análise, a um clique.
+        */}
         <div className="flex flex-wrap items-center gap-2">
           <SeverityBadge severity={alert.severity} />
-          <Badge variant="outline">{categoryLabel[alert.category]}</Badge>
           {!pending && <AlertStatusBadge status={alert.status} />}
           <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-graphite-400">
             <Clock className="h-3 w-3" />
@@ -83,42 +88,30 @@ export function AlertCard({ alert, className }: AlertCardProps) {
         </div>
 
         <div className="min-w-0">
-          <h3 className="font-display text-[17px] font-600 uppercase leading-tight tracking-[0em] text-navy-900">
-            {alert.title}
-          </h3>
-          <p className="mt-1 text-[13.5px] leading-snug text-graphite-500">{alert.description}</p>
+          <h3 className="text-[15px] font-600 leading-tight text-navy-900">{alert.title}</h3>
+          <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-graphite-500">{alert.description}</p>
         </div>
 
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border pt-3 sm:grid-cols-4">
-          <div>
-            <dt className="tech-label">Câmera</dt>
-            <dd className="tech-value text-[13px]">{alert.cameraCode}</dd>
-          </div>
-          <div>
-            <dt className="tech-label">Local</dt>
-            <dd className="tech-value text-[13px]">{alert.locationCode}</dd>
-          </div>
-          <div>
-            <dt className="tech-label">Confiança IA</dt>
-            <dd
-              className={cn(
-                'tech-value text-[13px]',
-                alert.confidence >= 90 ? 'text-status-critical' : 'text-graphite-900',
-              )}
-            >
-              {alert.confidence.toFixed(1).replace('.', ',')}%
-            </dd>
-          </div>
-          <div>
-            <dt className="tech-label">Norma</dt>
-            <dd className="tech-value text-[13px]">{alert.standardRef}</dd>
-          </div>
-        </dl>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-graphite-500">
+          <span className="font-mono text-graphite-700">{alert.cameraCode}</span>
+          <span className="text-graphite-300">·</span>
+          <span className="truncate" title={alert.locationLabel}>
+            {alert.locationLabel}
+          </span>
+          <span className="text-graphite-300">·</span>
+          <span
+            className={cn(
+              'font-mono tabular-nums',
+              alert.confidence >= 90 ? 'text-status-critical' : 'text-graphite-700',
+            )}
+          >
+            {alert.confidence.toFixed(0)}% conf.
+          </span>
+        </p>
       </div>
 
       {/* ação */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border p-4 sm:flex-col sm:items-end sm:justify-center sm:border-l sm:border-t-0">
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-graphite-300">{alert.code}</span>
         <Button asChild variant={alert.severity === 'critical' && pending ? 'destructive' : 'default'} size="sm">
           <Link to={`/alerts/${alert.id}`}>
             {pending ? 'Analisar' : 'Ver análise'}

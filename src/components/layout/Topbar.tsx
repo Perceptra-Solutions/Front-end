@@ -12,7 +12,7 @@ import { SeverityBadge } from '@/components/shared/StatusBadge'
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const navigate = useNavigate()
-  const { alerts, kpis, resetDemo, obraAtual } = useAppStore()
+  const { alerts, kpis, resetDemo, obraAtual, loading } = useAppStore()
   const [query, setQuery] = React.useState('')
   const [lastUpdate, setLastUpdate] = React.useState(() => new Date())
 
@@ -50,7 +50,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
           <p className="tech-label">Obra atual</p>
           <div className="flex items-center gap-2">
             <Link to="/works" className="truncate font-display text-[15.5px] font-600 uppercase tracking-[0.02em] text-navy-900 hover:text-technical-700">
-              {obraAtual?.nome ?? 'Carregando obra…'}
+              {obraAtual?.nome ?? (loading ? 'Carregando…' : 'Sem obra cadastrada')}
             </Link>
             <span className="hidden font-mono text-[10.5px] text-graphite-300 sm:inline">{obraAtual?.codigo ?? '—'}</span>
           </div>

@@ -69,7 +69,7 @@ export default function Works() {
         {carregando && <Carregando texto="Carregando obras…" />}
         {erro && !carregando && <ErroConexao mensagem={erro} aoTentarNovamente={recarregar} />}
         {!carregando && !erro && linhas.length === 0 && (
-          <Vazio titulo="Nenhuma obra cadastrada" descricao="Rode o seed do backend (npm run db:seed) para popular a demo." />
+          <Vazio titulo="Nenhuma obra cadastrada" descricao="Cadastre a primeira obra para o sistema começar a operar." />
         )}
 
         {!carregando && !erro && linhas.length > 0 && (

@@ -68,7 +68,7 @@ export default function AIModels() {
         {carregando && <Carregando texto="Carregando catálogo de modelos…" />}
         {erro && !carregando && <ErroConexao mensagem={erro} aoTentarNovamente={recarregar} />}
         {!carregando && !erro && linhas.length === 0 && (
-          <Vazio titulo="Nenhum modelo publicado" descricao="Rode o seed do backend (npm run db:seed) para popular a demo." />
+          <Vazio titulo="Nenhum modelo publicado" descricao="Publique a primeira versão de modelo para o catálogo aparecer aqui." />
         )}
 
         {!carregando && !erro && linhas.length > 0 && (

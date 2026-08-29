@@ -9,7 +9,7 @@
  * derivado de um campo real por heurística (documentado campo a campo) ou
  * fica com um rótulo neutro — nunca um nome/numero inventado do zero.
  */
-import type { ActionPlan, Alert, Camera, Evidence, NonConformity, TimelineEvent } from '@/types'
+import type { ActionPlan, Alert, Evidence, NonConformity, TimelineEvent } from '@/types'
 import type {
   AcaoCorretivaApi,
   CameraApi,
@@ -313,71 +313,5 @@ export function evidenciaParaEvidence(
     hash: e.hashSha256,
     sizeLabel: tamanhoLegivel(e.tamanhoBytes),
     sceneVariant: cenaPelaEvidencia(e),
-  }
-}
-
-/**
- * Âncoras na prancha (percentuais) onde as câmeras são desenhadas.
- *
- * O backend NÃO guarda coordenada de câmera — não há latitude/longitude nem
- * posição em planta na tabela `camera`. Então a posição aqui é esquemática:
- * as câmeras reais são distribuídas por estas âncoras, na ordem em que vêm
- * da API. Identificador, status e contagem de detecção são reais; só o ponto
- * no desenho é ilustrativo, e a tela diz isso.
- */
-const ANCORAS_PLANTA = [
-  { x: 21, y: 20, rotation: 90 },
-  { x: 31, y: 44, rotation: 200 },
-  { x: 58, y: 20, rotation: 90 },
-  { x: 66, y: 46, rotation: 210 },
-  { x: 82, y: 18, rotation: 120 },
-  { x: 24, y: 66, rotation: 0 },
-  { x: 54, y: 58, rotation: 270 },
-  { x: 42, y: 82, rotation: 315 },
-  { x: 75, y: 74, rotation: 250 },
-  { x: 8, y: 78, rotation: 45 },
-] as const
-
-const STATUS_CAMERA_UI: Record<CameraApi['status'], Camera['status']> = {
-  ATIVA: 'online',
-  OFFLINE: 'offline',
-  MANUTENCAO: 'maintenance',
-}
-
-/**
- * Converte a câmera da API para a forma que `SitePlan` desenha.
- *
- * Recebe `local`/`modelo` já resolvidos em vez do objeto `Cadastros` inteiro:
- * quem chama é a tela do mapa, que não monta esse agregado.
- */
-export function cameraParaPlanta(
-  c: CameraApi,
-  indice: number,
-  contexto: { local?: LocalApi; modelo?: ModeloIaApi } = {},
-): Camera {
-  const { local, modelo } = contexto
-  const ancora = ANCORAS_PLANTA[indice % ANCORAS_PLANTA.length]
-  const partes = local?.nome.split(' / ') ?? []
-
-  return {
-    id: c.id,
-    code: c.identificador,
-    name: c.identificador,
-    blockCode: partes[0] ?? '—',
-    locationCode: local?.codigo ?? '—',
-    locationLabel: local?.nome ?? 'Sem local vinculado',
-    status: STATUS_CAMERA_UI[c.status],
-    model: c.fabricante ?? '—',
-    // Sem contrapartida no schema — a tela do mapa não exibe nenhum destes.
-    resolution: '—',
-    fps: 0,
-    protocol: c.protocolo,
-    ip: '—',
-    aiModelCode: modelo ? `${modelo.nome}-${modelo.versao}` : '—',
-    lastDetectionAt: c.ultimoHeartbeat ?? '',
-    alertsToday: 0,
-    uptimeDays: 0,
-    plan: { ...ancora },
-    sceneVariant: 'yard',
   }
 }

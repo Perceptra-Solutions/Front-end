@@ -4,7 +4,8 @@ import { cn } from '@/lib/utils'
 
 interface KpiCardProps {
   label: string
-  code: string
+  /** Rótulo técnico opcional. Deixado de fora do dashboard: era decorativo. */
+  code?: string
   value: string
   unit?: string
   hint: string
@@ -24,13 +25,12 @@ const toneRing: Record<NonNullable<KpiCardProps['tone']>, string> = {
 }
 
 /** Indicador de operação — o número manda, o resto é contexto. */
-export function KpiCard({ label, code, value, unit, hint, icon: Icon, tone = 'neutral', trend, spark, children }: KpiCardProps) {
+export function KpiCard({ label, value, unit, hint, icon: Icon, tone = 'neutral', trend, spark, children }: KpiCardProps) {
   return (
     <div className="corner-marks relative flex flex-col justify-between rounded-md border border-border bg-card p-4 shadow-panel transition-shadow hover:shadow-raised">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-display text-[11.5px] font-600 uppercase tracking-[0.11em] text-graphite-500">{label}</p>
-          <p className="mt-0.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-graphite-300">{code}</p>
         </div>
         <span className={cn('flex h-8 w-8 items-center justify-center rounded-[3px]', toneRing[tone])}>
           <Icon className="h-4 w-4" />

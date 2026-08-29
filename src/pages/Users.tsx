@@ -67,7 +67,7 @@ export default function UsersPage() {
         {carregando && <Carregando texto="Carregando equipe…" />}
         {erro && !carregando && <ErroConexao mensagem={erro} aoTentarNovamente={recarregar} />}
         {!carregando && !erro && usuarios.length === 0 && (
-          <Vazio titulo="Nenhum usuário cadastrado" descricao="Rode o seed do backend (npm run db:seed) para popular a demo." />
+          <Vazio titulo="Nenhum usuário cadastrado" descricao="Nenhum usuário ativo além do seu." />
         )}
 
         {!carregando && !erro && usuarios.length > 0 && (

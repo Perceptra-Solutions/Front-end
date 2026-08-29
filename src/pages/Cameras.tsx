@@ -72,7 +72,7 @@ export default function Cameras() {
         {carregando && <Carregando texto="Carregando parque de câmeras…" />}
         {erro && !carregando && <ErroConexao mensagem={erro} aoTentarNovamente={recarregar} />}
         {!carregando && !erro && cameras.length === 0 && (
-          <Vazio titulo="Nenhuma câmera cadastrada" descricao="Rode o seed do backend (npm run db:seed) para popular a demo." />
+          <Vazio titulo="Nenhuma câmera cadastrada" descricao="Cadastre as câmeras da obra para receber detecções." />
         )}
 
         {!carregando && !erro && cameras.length > 0 && (

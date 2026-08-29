@@ -18,7 +18,7 @@ import {
   listarNaoConformidades,
   registrarVerificacao,
 } from '@/lib/api/naoConformidades'
-import type { CameraApi, ModeloIaApi, NaoConformidadeApi, ObraApi, SeveridadeNc } from '@/lib/api/types'
+import type { CameraApi, LocalApi, ModeloIaApi, NaoConformidadeApi, ObraApi, SeveridadeNc } from '@/lib/api/types'
 import {
   acaoCorretivaParaActionPlan,
   cadastrosVazios,
@@ -73,6 +73,7 @@ interface AppStoreValue {
   obraAtual: ObraApi | null
   cameras: CameraApi[]
   modelos: ModeloIaApi[]
+  locais: LocalApi[]
   alerts: Alert[]
   nonConformities: NonConformity[]
   actionPlans: ActionPlan[]
@@ -126,6 +127,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [obraAtual, setObraAtual] = React.useState<ObraApi | null>(null)
   const [cameras, setCameras] = React.useState<CameraApi[]>([])
   const [modelos, setModelos] = React.useState<ModeloIaApi[]>([])
+  const [locais, setLocais] = React.useState<LocalApi[]>([])
 
   const cadRef = React.useRef<Cadastros>(cadastrosVazios())
   const ncsApiRef = React.useRef<Map<string, NaoConformidadeApi>>(new Map())
@@ -150,6 +152,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       setObraAtual(obras.itens[0] ?? null)
       setCameras(cameras.itens)
       setModelos(modelos.itens)
+      setLocais(locais.itens)
 
       const cad = cadastrosVazios()
       for (const u of usuarios.itens) cad.usuariosPorId.set(u.id, u)
@@ -397,6 +400,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     obraAtual,
     cameras,
     modelos,
+    locais,
     alerts,
     nonConformities,
     actionPlans,

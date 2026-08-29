@@ -26,7 +26,20 @@ export interface Recurso<T> {
  * o que evita o `setState` depois do unmount quando alguém troca de página
  * no meio do carregamento.
  */
-export function useRecurso<T>(carregar: (signal: AbortSignal) => Promise<T>): Recurso<T> {
+export function useRecurso<T>(
+  carregar: (signal: AbortSignal) => Promise<T>,
+  /**
+   * Chave de recarga. Quando muda, o recurso é buscado de novo.
+   *
+   * Existe porque `carregar` vive numa ref (para não re-executar a cada
+   * render) — sem a chave, um carregamento que dependa de algo que chega
+   * DEPOIS da montagem nunca acontece. Foi o caso do mapa da obra: na
+   * primeira renderização `obraAtual` ainda é null, o carregamento resolvia
+   * vazio e a tela ficava presa no estado "sem mapa" mesmo com o arquivo no
+   * servidor.
+   */
+  chave: string | number | null = null,
+): Recurso<T> {
   const [dados, setDados] = React.useState<T | null>(null)
   const [carregando, setCarregando] = React.useState(true)
   const [erro, setErro] = React.useState<string | null>(null)
@@ -56,7 +69,7 @@ export function useRecurso<T>(carregar: (signal: AbortSignal) => Promise<T>): Re
       })
 
     return () => controle.abort()
-  }, [tentativa])
+  }, [tentativa, chave])
 
   return { dados, carregando, erro, recarregar: () => setTentativa((n) => n + 1) }
 }

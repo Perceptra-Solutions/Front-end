@@ -1,235 +1,297 @@
 import * as React from 'react'
-import { Link } from 'react-router-dom'
-import { Layers, MapPin } from 'lucide-react'
+import { Download, ImageOff, Loader2, Maximize2, Upload } from 'lucide-react'
+
 import { PageBody, PageHeader } from '@/components/shared/PageHeader'
-import { SemDadoNoBackend } from '@/components/shared/EstadoPagina'
-import { cameraParaPlanta } from '@/lib/adapters'
-import { SitePlan, zones } from '@/components/map/SitePlan'
-import { DetectionFrame } from '@/components/cameras/DetectionFrame'
-import { Drawer, DrawerBody, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
+import { Carregando, ErroConexao } from '@/components/shared/EstadoPagina'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { StatusDot } from '@/components/shared/StatusBadge'
-import { SeverityBadge } from '@/components/shared/StatusBadge'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { apiBlobUrl } from '@/lib/api/client'
+import { MIMES_PLANTA, buscarPlanta, caminhoArquivoPlanta, enviarPlanta } from '@/lib/api/plantaObra'
+import type { PlantaObraApi } from '@/lib/api/types'
+import { mensagemErro, useRecurso } from '@/hooks/useRecurso'
 import { useAppStore } from '@/store/AppStore'
-import { formatDate, formatTime } from '@/lib/utils'
-import type { Camera } from '@/types'
+import { useToast } from '@/store/toast'
 
+function tamanhoLegivel(bytes: string | null): string {
+  if (!bytes) return '—'
+  const n = Number(bytes)
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
+}
+
+/**
+ * Mapa da Obra.
+ *
+ * A versão anterior desenhava uma planta em SVG com setores, câmeras e cotas
+ * inventados — nada daquilo existia no banco. Aqui o mapa é o **arquivo real
+ * que o usuário sobe**, guardado no servidor (`POST /obras/:id/planta`) e
+ * lido de volta (`GET /obras/:id/planta/arquivo`).
+ *
+ * A tela prioriza o próprio arquivo: metadado e ação de substituir ficam
+ * numa faixa discreta embaixo.
+ */
 export default function ConstructionMap() {
-  const { alerts, obraAtual, cameras: camerasApi } = useAppStore()
-  const [selected, setSelected] = React.useState<Camera | null>(null)
+  const { obraAtual, usuario, loading: carregandoObra } = useAppStore()
+  const { push } = useToast()
 
-  // Câmeras REAIS desenhadas na prancha. A posição vem de âncoras fixas
-  // (ver cameraParaPlanta): o backend não guarda coordenada de câmera, então
-  // identificador e status são reais e só o ponto no desenho é esquemático.
-  const cameras = React.useMemo(() => camerasApi.map((c, i) => cameraParaPlanta(c, i)), [camerasApi])
+  const [planta, setPlanta] = React.useState<PlantaObraApi | null>(null)
+  const [enviando, setEnviando] = React.useState(false)
+  const [ampliado, setAmpliado] = React.useState(false)
+  const entrada = React.useRef<HTMLInputElement>(null)
 
-  const pending = alerts.filter((a) => a.status === 'pending')
-  const alertCountByCamera = pending.reduce<Record<string, number>>((acc, a) => {
-    acc[a.cameraId] = (acc[a.cameraId] ?? 0) + 1
-    return acc
-  }, {})
+  const obraId = obraAtual?.id
+  const ehGestor = usuario?.papel === 'GESTOR'
 
-  const selectedAlerts = selected ? alerts.filter((a) => a.cameraId === selected.id) : []
+  // `obraId` como chave: ele chega depois da montagem (o AppStore carrega a
+  // obra em paralelo), e sem isso a busca resolveria null e nunca repetiria.
+  const { dados, carregando, erro, recarregar } = useRecurso(async (signal) => {
+    if (!obraId) return null
+    return buscarPlanta(obraId, signal)
+  }, obraId ?? null)
+
+  React.useEffect(() => {
+    if (dados) setPlanta(dados)
+  }, [dados])
+
+  async function aoEscolherArquivo(evento: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = evento.target.files?.[0]
+    // Limpa antes de sair: sem isto, escolher o MESMO arquivo de novo não
+    // dispara change e a substituição parece não funcionar.
+    evento.target.value = ''
+    if (!arquivo || !obraId) return
+
+    if (!MIMES_PLANTA.includes(arquivo.type as (typeof MIMES_PLANTA)[number])) {
+      push({
+        tone: 'warning',
+        title: 'Formato não aceito',
+        description: 'Use PNG, JPEG, WebP, SVG ou PDF.',
+      })
+      return
+    }
+
+    setEnviando(true)
+    try {
+      setPlanta(await enviarPlanta(obraId, arquivo))
+      push({ tone: 'success', title: 'Mapa da obra atualizado' })
+    } catch (causa) {
+      push({ tone: 'warning', title: 'Não foi possível enviar o mapa', description: mensagemErro(causa) })
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  const temPlanta = planta?.existe === true
 
   return (
     <>
       <PageHeader
-        eyebrow="Implantação · Planta do canteiro"
+        eyebrow="Implantação"
         title="Mapa da obra"
-        description="Setores, áreas restritas e o posicionamento das câmeras sobre a implantação do canteiro."
-        meta={[
-          { label: 'Escala', value: '1:500' },
-          { label: 'Prancha', value: 'IMP-01' },
-          { label: 'Obra', value: obraAtual?.codigo ?? '—' },
-        ]}
+        description="Planta, croqui ou implantação do canteiro — o arquivo fica guardado no servidor."
+        meta={obraAtual ? [{ label: 'Obra', value: obraAtual.codigo }] : undefined}
+        actions={
+          ehGestor && temPlanta ? (
+            <Button variant="outline" size="sm" onClick={() => entrada.current?.click()} disabled={enviando}>
+              {enviando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              Substituir
+            </Button>
+          ) : undefined
+        }
       />
 
-      <PageBody className="space-y-5">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-          <Card className="min-w-0 overflow-hidden">
-            <CardHeader>
-              <CardTitle>Implantação · {obraAtual?.nome ?? '—'}</CardTitle>
-              <div className="flex flex-wrap items-center gap-4">
-                <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-graphite-400">
-                  <span className="h-2 w-2 rounded-full bg-technical-600" /> câmera ativa
-                </span>
-                <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-graphite-400">
-                  <span className="h-2 w-2 animate-pulse-live rounded-full bg-status-critical" /> com alerta
-                </span>
-                <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-graphite-400">
-                  <span className="h-2 w-2 rounded-full bg-status-warning" /> manutenção
-                </span>
-              </div>
-            </CardHeader>
-            <div className="p-3">
-              <SitePlan
-                cameras={cameras}
-                alertCountByCamera={alertCountByCamera}
-                selectedId={selected?.id}
-                onSelect={setSelected}
-              />
-            </div>
-          </Card>
+      <input
+        ref={entrada}
+        type="file"
+        accept={MIMES_PLANTA.join(',')}
+        className="hidden"
+        onChange={(e) => void aoEscolherArquivo(e)}
+      />
 
-          <div className="flex min-w-0 flex-col gap-5">
-            <Card>
-              <CardHeader>
-                <CardTitle>Setores</CardTitle>
-                <Layers className="h-4 w-4 text-graphite-300" />
-              </CardHeader>
-              <div className="divide-y divide-border">
-                {zones.map((z) => {
-                  // Sem coordenada real, não há como dizer que câmera está em
-                  // que setor: o vínculo abaixo usa o nome do local cadastrado.
-                  const zoneCameras = cameras.filter(
-                    (c) => c.locationCode === z.code || c.blockCode.toUpperCase().includes(z.label.toUpperCase()),
-                  )
-                  return (
-                    <div key={z.code} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                      <div className="min-w-0">
-                        <p className="truncate font-display text-[13.5px] font-600 uppercase tracking-[0.08em] text-navy-900">
-                          {z.label}
-                        </p>
-                        <p className="truncate font-mono text-[10px] uppercase tracking-[0.1em] text-graphite-400">{z.code}</p>
-                      </div>
-                      <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-graphite-500">
-                        {zoneCameras.length} cam
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            </Card>
+      <PageBody>
+        {(carregando || carregandoObra) && <Carregando texto="Carregando mapa da obra…" />}
+        {erro && !carregando && <ErroConexao mensagem={erro} aoTentarNovamente={recarregar} />}
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Ocorrências no mapa</CardTitle>
-                <MapPin className="h-4 w-4 text-graphite-300" />
-              </CardHeader>
-              <CardContent className="space-y-2.5">
-                {pending.slice(0, 4).map((a) => (
-                  <Link
-                    key={a.id}
-                    to={`/alerts/${a.id}`}
-                    className="block rounded-[3px] border border-border p-2.5 transition-colors hover:border-technical-300 hover:bg-technical-100/40"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <SeverityBadge severity={a.severity} />
-                      <span className="font-mono text-[10.5px] text-graphite-400">{a.cameraCode}</span>
-                    </div>
-                    <p className="mt-1.5 text-[13px] font-500 text-graphite-900">{a.title}</p>
-                    <p className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-graphite-400">
-                      {a.blockCode} · {a.locationCode}
-                    </p>
-                  </Link>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-        <SemDadoNoBackend>
-          As câmeras da prancha são as cadastradas no backend (identificador, status e detecções são reais), mas{' '}
-          <b>a posição de cada uma é esquemática</b>: a tabela <code className="font-mono text-[11.5px]">camera</code> não
-          guarda coordenada. Os setores, a escala e o número da prancha também são ilustrativos — não há planta de
-          implantação no schema.
-        </SemDadoNoBackend>
+        {!carregando && !carregandoObra && !erro && !obraId && (
+          <VazioSimples titulo="Nenhuma obra cadastrada" descricao="Cadastre uma obra antes de enviar o mapa." />
+        )}
+
+        {!carregando && !carregandoObra && !erro && obraId && !temPlanta && (
+          <VazioSimples
+            titulo="Nenhum mapa cadastrado"
+            descricao={
+              ehGestor
+                ? 'Envie a planta ou o croqui do canteiro. Aceita PNG, JPEG, WebP, SVG ou PDF.'
+                : 'Só o gestor pode enviar o mapa da obra.'
+            }
+            acao={
+              ehGestor ? (
+                <Button variant="navy" size="sm" onClick={() => entrada.current?.click()} disabled={enviando}>
+                  {enviando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  Adicionar mapa da obra
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
+
+        {!carregando && !erro && obraId && temPlanta && planta && (
+          <figure className="overflow-hidden rounded-md border border-border bg-card shadow-panel">
+            <VisualizadorPlanta
+              obraId={obraId}
+              planta={planta}
+              onAmpliar={() => setAmpliado(true)}
+              enviando={enviando}
+            />
+            {/* Metadado deliberadamente discreto: o arquivo é o conteúdo. */}
+            <figcaption className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-4 py-2.5 text-[11.5px] text-graphite-400">
+              <span className="truncate font-500 text-graphite-600">{planta.nome ?? 'planta'}</span>
+              <span>{tamanhoLegivel(planta.tamanhoBytes)}</span>
+              {planta.atualizadaEm && (
+                <span>atualizado em {new Date(planta.atualizadaEm).toLocaleDateString('pt-BR')}</span>
+              )}
+              <span className="ml-auto font-mono" title={planta.hashSha256 ?? undefined}>
+                {planta.hashSha256?.slice(0, 12)}…
+              </span>
+            </figcaption>
+          </figure>
+        )}
       </PageBody>
 
-      {/* detalhe da câmera */}
-      <Drawer open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DrawerContent>
-          {selected && (
-            <>
-              <DrawerHeader>
-                <DrawerTitle className="font-display text-[17.5px] font-600 uppercase tracking-[0.03em] text-navy-900">
-                  {selected.code} · {selected.name}
-                </DrawerTitle>
-                <div className="mt-1 flex flex-wrap items-center gap-3">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-graphite-400">
-                    {selected.blockCode} · {selected.locationCode}
-                  </span>
-                  <StatusDot tone={selected.status} />
-                </div>
-              </DrawerHeader>
-
-              <DrawerBody className="space-y-4">
-                {selected.status === 'online' ? (
-                  <DetectionFrame
-                    variant={selected.sceneVariant}
-                    boxes={selectedAlerts[0]?.boxes.slice(0, 2)}
-                    cameraCode={selected.code}
-                    locationLabel={selected.locationLabel}
-                    timestamp={selected.lastDetectionAt}
-                    live
-                    className="aspect-video w-full rounded-[3px]"
-                  />
-                ) : (
-                  <div className="flex aspect-video w-full items-center justify-center rounded-[3px] bg-navy-950 blueprint-grid-dark">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-white/40">Sem sinal</span>
-                  </div>
-                )}
-
-                <dl className="grid grid-cols-2 gap-4">
-                  {[
-                    { label: 'Modelo do equipamento', value: selected.model },
-                    { label: 'Modelo de IA', value: selected.aiModelCode },
-                    { label: 'Resolução', value: selected.resolution },
-                    { label: 'Taxa de quadros', value: `${selected.fps} fps` },
-                    { label: 'Endereço', value: selected.ip },
-                    { label: 'Protocolo', value: selected.protocol },
-                    { label: 'Uptime', value: `${selected.uptimeDays} dias` },
-                    { label: 'Alertas hoje', value: String(selected.alertsToday) },
-                  ].map((r) => (
-                    <div key={r.label}>
-                      <dt className="tech-label">{r.label}</dt>
-                      <dd className="tech-value text-[13px]">{r.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-
-                <div>
-                  <p className="tech-label mb-2">Ocorrências desta câmera</p>
-                  <div className="space-y-2">
-                    {selectedAlerts.length === 0 && (
-                      <p className="rounded-[3px] border border-border bg-graphite-50 px-3 py-4 text-center text-[13px] text-graphite-400">
-                        Nenhuma ocorrência registrada hoje.
-                      </p>
-                    )}
-                    {selectedAlerts.map((a) => (
-                      <Link
-                        key={a.id}
-                        to={`/alerts/${a.id}`}
-                        className="flex items-center justify-between gap-3 rounded-[3px] border border-border px-3 py-2 transition-colors hover:border-technical-300"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-500 text-graphite-900">{a.title}</p>
-                          <p className="font-mono text-[10.5px] text-graphite-400">
-                            {formatDate(a.detectedAt)} {formatTime(a.detectedAt)} · {a.confidence.toFixed(1)}%
-                          </p>
-                        </div>
-                        <Badge variant={a.severity === 'critical' ? 'critical' : a.severity === 'warning' ? 'warning' : 'info'}>
-                          {a.status === 'pending' ? 'Triagem' : a.status === 'confirmed' ? 'NC' : 'Descartada'}
-                        </Badge>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              </DrawerBody>
-
-              <DrawerFooter>
-                <Button asChild variant="outline" size="sm">
-                  <Link to="/cameras">Ficha da câmera</Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link to="/monitoring">Abrir no mural</Link>
-                </Button>
-              </DrawerFooter>
-            </>
-          )}
-        </DrawerContent>
-      </Drawer>
+      {planta && obraId && (
+        <Dialog open={ampliado} onOpenChange={setAmpliado}>
+          <DialogContent className="max-w-[min(96vw,1400px)] p-0">
+            <VisualizadorPlanta obraId={obraId} planta={planta} ampliado />
+          </DialogContent>
+        </Dialog>
+      )}
     </>
+  )
+}
+
+function VazioSimples({
+  titulo,
+  descricao,
+  acao,
+}: {
+  titulo: string
+  descricao: string
+  acao?: React.ReactNode
+}) {
+  return (
+    <div className="rounded-md border border-dashed border-graphite-200 bg-card px-6 py-16 text-center shadow-panel">
+      <ImageOff className="mx-auto h-6 w-6 text-graphite-300" />
+      <p className="mt-3 text-[14px] font-600 text-graphite-800">{titulo}</p>
+      <p className="mx-auto mt-1 max-w-md text-[13px] text-graphite-500">{descricao}</p>
+      {acao && <div className="mt-5">{acao}</div>}
+    </div>
+  )
+}
+
+/**
+ * Busca o arquivo autenticado e o exibe. PDF vai em `<object>`, imagem em
+ * `<img>` — a rota exige Bearer, então nenhum dos dois pode apontar direto
+ * para a URL: o blob é buscado e vira object URL, revogado no cleanup.
+ */
+function VisualizadorPlanta({
+  obraId,
+  planta,
+  ampliado,
+  onAmpliar,
+  enviando,
+}: {
+  obraId: string
+  planta: PlantaObraApi
+  ampliado?: boolean
+  onAmpliar?: () => void
+  enviando?: boolean
+}) {
+  const [url, setUrl] = React.useState<string | null>(null)
+  const [falhou, setFalhou] = React.useState(false)
+
+  // O hash entra nas dependências: substituir a planta troca o hash e força
+  // a rebusca — sem isso o navegador continuaria mostrando a anterior.
+  const chave = planta.hashSha256
+
+  React.useEffect(() => {
+    let cancelado = false
+    let criada: string | null = null
+    setUrl(null)
+    setFalhou(false)
+
+    apiBlobUrl(caminhoArquivoPlanta(obraId))
+      .then((u) => {
+        if (cancelado) {
+          URL.revokeObjectURL(u)
+          return
+        }
+        criada = u
+        setUrl(u)
+      })
+      .catch(() => {
+        if (!cancelado) setFalhou(true)
+      })
+
+    return () => {
+      cancelado = true
+      if (criada) URL.revokeObjectURL(criada)
+    }
+  }, [obraId, chave])
+
+  const altura = ampliado ? 'h-[85vh]' : 'h-[clamp(340px,58vh,680px)]'
+
+  if (falhou) {
+    return (
+      <div className={`flex ${altura} items-center justify-center text-[13px] text-graphite-400`}>
+        Não foi possível carregar o arquivo do mapa.
+      </div>
+    )
+  }
+
+  if (!url) {
+    return (
+      <div className={`flex ${altura} items-center justify-center`}>
+        <Loader2 className="h-5 w-5 animate-spin text-graphite-300" />
+      </div>
+    )
+  }
+
+  const ehPdf = planta.mime === 'application/pdf'
+
+  return (
+    <div className={`relative ${altura} bg-graphite-50`}>
+      {ehPdf ? (
+        <object data={url} type="application/pdf" className="h-full w-full">
+          <div className="flex h-full items-center justify-center gap-2 text-[13px] text-graphite-500">
+            Seu navegador não exibe PDF embutido.
+            <a href={url} download={planta.nome ?? 'planta.pdf'} className="text-technical-600 underline">
+              Baixar
+            </a>
+          </div>
+        </object>
+      ) : (
+        <img src={url} alt={`Mapa da obra — ${planta.nome ?? ''}`} className="h-full w-full object-contain" />
+      )}
+
+      {enviando && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/60">
+          <Loader2 className="h-6 w-6 animate-spin text-technical-600" />
+        </div>
+      )}
+
+      {!ampliado && (
+        <div className="absolute right-3 top-3 flex gap-1.5">
+          <Button variant="outline" size="icon-sm" asChild title="Baixar">
+            <a href={url} download={planta.nome ?? 'planta'}>
+              <Download className="h-3.5 w-3.5" />
+            </a>
+          </Button>
+          {onAmpliar && (
+            <Button variant="outline" size="icon-sm" onClick={onAmpliar} title="Ampliar">
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

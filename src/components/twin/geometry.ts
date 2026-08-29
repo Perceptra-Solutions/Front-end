@@ -10,14 +10,20 @@ import * as THREE from 'three'
 
 /* ---------------- dimensões de projeto ---------------- */
 
-export const FLOORS = 12
+/**
+ * Número de pavimentos do modelo. Era fixo em 12 — um prédio inventado.
+ * Agora vem por parâmetro: quem monta a cena passa a contagem real de
+ * pavimentos cadastrados na obra (`local` com tipo PAVIMENTO). O default
+ * existe só para a assinatura antiga não quebrar.
+ */
+export const FLOORS_PADRAO = 12
 /** pé-direito estrutural (m) */
 export const FLOOR_H = 3.0
 /** térreo com pé-direito duplo (m) */
 export const GROUND_H = 4.6
 export const WIDTH = 26
 export const DEPTH = 16
-export const TOTAL_H = GROUND_H + FLOORS * FLOOR_H
+export const alturaTotal = (floors: number) => GROUND_H + floors * FLOOR_H
 
 /* ---------------- materiais ---------------- */
 
@@ -199,7 +205,7 @@ export interface BuildingModel {
   foundation: THREE.Group
 }
 
-export function createBuilding(mats: Materials): BuildingModel {
+export function createBuilding(mats: Materials, totalPavimentos: number = FLOORS_PADRAO): BuildingModel {
   const root = new THREE.Group()
 
   /* fundação / marcação no terreno — o que aparece na fase de planta */
@@ -230,7 +236,7 @@ export function createBuilding(mats: Materials): BuildingModel {
 
   /* pavimentos-tipo */
   const floors: FloorLayer[] = []
-  for (let i = 1; i <= FLOORS; i++) {
+  for (let i = 1; i <= totalPavimentos; i++) {
     const f = createFloor(i, mats)
     floors.push(f)
     root.add(f.group)
@@ -238,7 +244,7 @@ export function createBuilding(mats: Materials): BuildingModel {
 
   /* cobertura */
   const roof = new THREE.Group()
-  const roofY = GROUND_H + FLOORS * FLOOR_H
+  const roofY = GROUND_H + totalPavimentos * FLOOR_H
   roof.add(box(WIDTH + 0.6, 0.4, DEPTH + 0.6, mats.concrete, 0, roofY + 0.2))
   // platibanda
   for (const [w, d, x, z] of [

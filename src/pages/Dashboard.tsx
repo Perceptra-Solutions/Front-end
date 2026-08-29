@@ -15,7 +15,7 @@ import { formatDateTechnical, pct } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 
 export default function Dashboard() {
-  const { alerts, nonConformities, actionPlans, kpis, obraAtual } = useAppStore()
+  const { alerts, nonConformities, actionPlans, kpis, obraAtual, loading } = useAppStore()
   const navigate = useNavigate()
   const [clock, setClock] = React.useState(() => new Date())
 
@@ -32,7 +32,7 @@ export default function Dashboard() {
     <>
       <PageHeader
         eyebrow={`Visão geral · ${obraAtual?.codigo ?? '—'}`}
-        title={obraAtual?.nome ?? 'Carregando obra…'}
+        title={obraAtual?.nome ?? (loading ? 'Carregando…' : 'Nenhuma obra cadastrada')}
         description="Monitoramento inteligente de qualidade, segurança e conformidade."
         meta={[
           { label: 'Data', value: formatDateTechnical(clock) },

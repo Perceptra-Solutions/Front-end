@@ -219,3 +219,13 @@ export interface IntegridadeApi {
   hashArmazenado: string
   hashRecalculado: string
 }
+
+/** Metadado da planta/mapa da obra. `arquivoUri` não existe: o caminho do storage não sai na API. */
+export interface PlantaObraApi {
+  existe: boolean
+  nome: string | null
+  mime: string | null
+  hashSha256: string | null
+  tamanhoBytes: string | null
+  atualizadaEm: string | null
+}

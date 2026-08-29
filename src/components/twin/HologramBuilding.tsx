@@ -2,7 +2,7 @@ import * as React from 'react'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { cn } from '@/lib/utils'
-import { FLOORS, FLOOR_H, GROUND_H, TOTAL_H, WIDTH, createBuilding, createContext, createMaterials } from './geometry'
+import { FLOOR_H, GROUND_H, alturaTotal, createBuilding, createContext, createMaterials } from './geometry'
 
 export type TwinPhase = 'plan' | 'tilt' | 'rising' | 'render' | 'complete'
 
@@ -26,8 +26,8 @@ const T_PLAN = 1.2
 const T_TILT = 1.2
 const T_PER_FLOOR = 0.3
 const T_ROOF = 1.0
-const T_RISE = FLOORS * T_PER_FLOOR
-const T_TOTAL = T_PLAN + T_TILT + T_RISE + T_ROOF
+const T_RISE_POR_PAVIMENTO = T_PER_FLOOR
+const duracaoTotal = (pavimentos: number) => T_PLAN + T_TILT + pavimentos * T_RISE_POR_PAVIMENTO + T_ROOF
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
@@ -64,6 +64,12 @@ function createSky() {
  * Os pavimentos com não conformidade aberta acendem em vermelho no concreto.
  */
 export function HologramBuilding({ floors, highlighted, onPhaseChange, className }: Props) {
+  // A altura do prédio e a duração da animação seguem os pavimentos REAIS
+  // cadastrados na obra — antes eram 12 fixos, um edifício que não existia.
+  const totalPavimentos = floors.length
+  const T_RISE = totalPavimentos * T_RISE_POR_PAVIMENTO
+  const T_TOTAL = duracaoTotal(totalPavimentos)
+  const TOTAL_H = alturaTotal(totalPavimentos)
   const wrapRef = React.useRef<HTMLDivElement>(null)
 
   const [phase, setPhase] = React.useState<TwinPhase>('plan')
@@ -144,7 +150,7 @@ export function HologramBuilding({ floors, highlighted, onPhaseChange, className
 
     /* --- modelo --- */
     const mats = createMaterials()
-    const building = createBuilding(mats)
+    const building = createBuilding(mats, totalPavimentos)
     const context = createContext(mats)
     scene.add(context)
     scene.add(building.root)
@@ -186,14 +192,14 @@ export function HologramBuilding({ floors, highlighted, onPhaseChange, className
       } else {
         nextPhase = t < T_TOTAL ? 'render' : 'complete'
         tilt = 1
-        floorsBuilt = FLOORS + (t - T_PLAN - T_TILT - T_RISE) / T_ROOF
+        floorsBuilt = totalPavimentos + (t - T_PLAN - T_TILT - T_RISE) / T_ROOF
       }
 
       if (nextPhase !== phaseRef.current) {
         phaseRef.current = nextPhase
         setPhase(nextPhase)
       }
-      const bi = clamp(Math.floor(floorsBuilt), 0, FLOORS)
+      const bi = clamp(Math.floor(floorsBuilt), 0, totalPavimentos)
       setBuilt((p) => (p === bi ? p : bi))
 
       /* ---- montagem progressiva ---- */
@@ -230,8 +236,8 @@ export function HologramBuilding({ floors, highlighted, onPhaseChange, className
         }
       })
 
-      building.roof.visible = floorsBuilt > FLOORS
-      const roofGrow = clamp(floorsBuilt - FLOORS, 0, 1)
+      building.roof.visible = floorsBuilt > totalPavimentos
+      const roofGrow = clamp(floorsBuilt - totalPavimentos, 0, 1)
       building.roof.scale.y = Math.max(0.001, easeInOut(roofGrow))
       context.visible = nextPhase !== 'plan'
 
@@ -251,7 +257,7 @@ export function HologramBuilding({ floors, highlighted, onPhaseChange, className
         cam.radius = lerp(78, 88, tilt)
         cam.target = lerp(0.08, 0.3, tilt)
       } else if (!interactive) {
-        const p = clamp(floorsBuilt / FLOORS, 0, 1)
+        const p = clamp(floorsBuilt / totalPavimentos, 0, 1)
         cam.yaw = 0.85 + p * 0.55
         cam.pitch = lerp(0.42, 0.24, p)
         cam.radius = lerp(88, 118, p)
@@ -330,7 +336,7 @@ export function HologramBuilding({ floors, highlighted, onPhaseChange, className
   const phaseLabel: Record<TwinPhase, string> = {
     plan: 'Locação e fundação',
     tilt: 'Térreo e pilotis executados',
-    rising: `Erguendo estrutura · ${String(Math.min(built, FLOORS)).padStart(2, '0')}/${FLOORS} pavimentos`,
+    rising: `Erguendo estrutura · ${String(Math.min(built, totalPavimentos)).padStart(2, '0')}/${totalPavimentos} pavimentos`,
     render: 'Cobertura e acabamento',
     complete: locked ? 'Vista travada' : 'Obra concluída · mova o mouse para girar',
   }
@@ -363,7 +369,7 @@ export function HologramBuilding({ floors, highlighted, onPhaseChange, className
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-4">
         <div className="rounded-[2px] bg-navy-950/45 px-2.5 py-1.5 backdrop-blur-[2px]">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-technical-300/80">
-            Gêmeo digital · BL-A · {TOTAL_H.toFixed(2).replace('.', ',')} m · {WIDTH} × 16 m
+            {totalPavimentos} pavimentos · {TOTAL_H.toFixed(2).replace('.', ',')} m
           </p>
           <p className="mt-1 font-display text-[14px] font-600 uppercase tracking-[0.09em] text-white">
             {phaseLabel[phase]}

@@ -1,14 +1,19 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-/* tipografia empacotada no projeto — nada é baixado em tempo de execução */
-import '@fontsource/space-grotesk/400.css'
-import '@fontsource/space-grotesk/500.css'
-import '@fontsource/space-grotesk/600.css'
-import '@fontsource/space-grotesk/700.css'
+/*
+ * Tipografia empacotada no projeto — nada é baixado em tempo de execução.
+ *
+ * Inter em toda a aplicação (títulos, texto, labels, tabelas, gráficos). A
+ * JetBrains Mono fica SÓ para identificador técnico e número tabular
+ * (NC-00124, CAM-07, hash, timestamp) — é o que dá alinhamento de coluna e
+ * distingue 0/O e 1/l num painel de engenharia.
+ */
+import '@fontsource/inter/400.css'
+import '@fontsource/inter/500.css'
+import '@fontsource/inter/600.css'
+import '@fontsource/inter/700.css'
 import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
-import '@fontsource/jetbrains-mono/600.css'
-import '@fontsource/jetbrains-mono/700.css'
 import { BrowserRouter } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AppStoreProvider } from '@/store/AppStore'
