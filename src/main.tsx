@@ -19,13 +19,13 @@ import './index.css'
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AppStoreProvider>
-        <ToastProvider>
+      <ToastProvider>
+        <AppStoreProvider>
           <TooltipProvider delayDuration={200}>
             <App />
           </TooltipProvider>
-        </ToastProvider>
-      </AppStoreProvider>
+        </AppStoreProvider>
+      </ToastProvider>
     </BrowserRouter>
   </React.StrictMode>,
 )

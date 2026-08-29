@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ClipboardList, Paperclip, Send, CheckCircle2 } from 'lucide-react'
 import { PageBody, PageHeader } from '@/components/shared/PageHeader'
 import { EventTimeline } from '@/components/action-plans/EventTimeline'
-import { CameraScene } from '@/components/cameras/CameraScene'
+import { EvidenciaImage } from '@/components/shared/EvidenciaImage'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,6 @@ import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ActionStatusBadge } from '@/components/shared/StatusBadge'
 import { useAppStore } from '@/store/AppStore'
-import { useToast } from '@/store/toast'
 import { cn, formatDate, num } from '@/lib/utils'
 import type { ActionStatus } from '@/types'
 
@@ -24,9 +23,9 @@ const priorityLabel: Record<string, string> = {
 
 export default function ActionPlans() {
   const { actionPlans, evidences, attachEvidence, sendToVerification, approveVerification } = useAppStore()
-  const { push } = useToast()
   const [status, setStatus] = React.useState<ActionStatus | 'all'>('all')
   const [selectedId, setSelectedId] = React.useState(actionPlans[0]?.id ?? '')
+  const inputArquivoRef = React.useRef<HTMLInputElement>(null)
 
   const filtered = actionPlans.filter((p) => status === 'all' || p.status === status)
   const selected = actionPlans.find((p) => p.id === selectedId) ?? filtered[0] ?? actionPlans[0]
@@ -146,24 +145,22 @@ export default function ActionPlans() {
 
                     {selected.status === 'in_progress' && (
                       <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            attachEvidence(selected.id, 'Registro fotográfico da correção executada')
-                            push({ tone: 'info', title: 'Evidência anexada', description: `Vinculada ao ${selected.code}.` })
+                        <input
+                          ref={inputArquivoRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,video/mp4,application/pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            const arquivo = e.target.files?.[0]
+                            e.target.value = ''
+                            if (arquivo) void attachEvidence(selected.id, arquivo)
                           }}
-                        >
+                        />
+                        <Button variant="outline" size="sm" onClick={() => inputArquivoRef.current?.click()}>
                           <Paperclip className="h-3.5 w-3.5" />
                           Anexar evidência
                         </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            sendToVerification(selected.id)
-                            push({ tone: 'info', title: 'Enviado para verificação', description: 'Aguardando aprovação de um segundo engenheiro.' })
-                          }}
-                        >
+                        <Button size="sm" onClick={() => void sendToVerification(selected.id)}>
                           <Send className="h-3.5 w-3.5" />
                           Enviar para verificação
                         </Button>
@@ -174,10 +171,7 @@ export default function ActionPlans() {
                       <Button
                         variant="success"
                         size="sm"
-                        onClick={() => {
-                          approveVerification(selected.id, 'Correção conferida em campo. Requisito atendido.')
-                          push({ tone: 'success', title: `${selected.nonConformityCode} resolvida`, description: 'Verificação aprovada por Juliana Prado.' })
-                        }}
+                        onClick={() => void approveVerification(selected.id, 'Correção conferida em campo. Requisito atendido.')}
                       >
                         <CheckCircle2 className="h-4 w-4" />
                         Aprovar e fechar
@@ -207,7 +201,7 @@ export default function ActionPlans() {
                       {planEvidences.map((e) => (
                         <figure key={e.id} className="overflow-hidden rounded-[3px] border border-border">
                           <div className="aspect-[4/3]">
-                            <CameraScene variant={e.sceneVariant} compact />
+                            <EvidenciaImage evidenciaId={e.id} fallbackVariant={e.sceneVariant} compact />
                           </div>
                           <figcaption className="space-y-0.5 bg-white px-2 py-1.5">
                             <p className="truncate text-[11.5px] text-graphite-700">{e.title}</p>

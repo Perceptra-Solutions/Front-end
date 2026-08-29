@@ -16,7 +16,7 @@ import { formatDateTechnical, pct } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 
 export default function Dashboard() {
-  const { alerts, nonConformities, kpis } = useAppStore()
+  const { alerts, nonConformities, actionPlans, kpis } = useAppStore()
   const navigate = useNavigate()
   const [clock, setClock] = React.useState(() => new Date())
 
@@ -87,7 +87,7 @@ export default function Dashboard() {
               code="IND-CAM-04"
               value={`${kpis.camerasOnline}`}
               unit={`/ ${kpis.camerasTotal}`}
-              hint={`${Math.round((kpis.camerasOnline / kpis.camerasTotal) * 100)}% do parque operacional`}
+              hint={`${kpis.camerasTotal > 0 ? Math.round((kpis.camerasOnline / kpis.camerasTotal) * 100) : 0}% do parque operacional`}
               icon={Camera}
               tone="neutral"
               spark={[20, 19, 20, 18, 19, kpis.camerasOnline]}
@@ -169,7 +169,11 @@ export default function Dashboard() {
                 {[
                   { label: 'Detecções aguardando triagem', value: kpis.activeAlerts, to: '/alerts' },
                   { label: 'NCs sem plano de ação', value: nonConformities.filter((n) => n.status === 'open').length, to: '/non-conformities' },
-                  { label: 'Ações aguardando verificação', value: 2, to: '/action-plans' },
+                  {
+                    label: 'Ações aguardando verificação',
+                    value: actionPlans.filter((p) => p.status === 'verification').length,
+                    to: '/action-plans',
+                  },
                 ].map((row) => (
                   <Link
                     key={row.label}

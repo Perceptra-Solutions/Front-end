@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Grid2X2, Grid3X3, LayoutGrid, Maximize2 } from 'lucide-react'
 import { PageBody, PageHeader } from '@/components/shared/PageHeader'
 import { CameraTile } from '@/components/cameras/CameraTile'
+import { LiveFeedMonitoramento } from '@/components/monitoring/LiveFeedMonitoramento'
 import { DetectionFrame } from '@/components/cameras/DetectionFrame'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -64,6 +65,8 @@ export default function Monitoring() {
       />
 
       <PageBody className="space-y-4">
+        <LiveFeedMonitoramento />
+
         <div className="flex flex-wrap items-center gap-3">
           <Select value={block} onValueChange={setBlock}>
             <SelectTrigger className="w-[200px]">

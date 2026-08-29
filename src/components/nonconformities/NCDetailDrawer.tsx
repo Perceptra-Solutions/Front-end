@@ -6,14 +6,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input, Textarea } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
 import { FlowTimeline } from '@/components/shared/FlowTimeline'
 import { SeverityBadge, NCStatusBadge } from '@/components/shared/StatusBadge'
 import { EventTimeline } from '@/components/action-plans/EventTimeline'
+import { EvidenciaImage } from '@/components/shared/EvidenciaImage'
 import { CameraScene } from '@/components/cameras/CameraScene'
 import { useAppStore } from '@/store/AppStore'
-import { useToast } from '@/store/toast'
+import { usuarioDemo } from '@/lib/api/client'
 import { formatDate, formatTime, num } from '@/lib/utils'
 import type { FlowStage, NonConformity } from '@/types'
 
@@ -32,7 +32,6 @@ const stageOf = (nc: NonConformity, hasPlan: boolean): FlowStage => {
 export function NCDetailDrawer({ nc, onClose }: NCDetailDrawerProps) {
   const { actionPlans, evidences, createActionPlan, attachEvidence, sendToVerification, approveVerification, rejectVerification } =
     useAppStore()
-  const { push } = useToast()
 
   const [planOpen, setPlanOpen] = React.useState(false)
   const [verifyOpen, setVerifyOpen] = React.useState(false)
@@ -40,11 +39,12 @@ export function NCDetailDrawer({ nc, onClose }: NCDetailDrawerProps) {
     title: '',
     description: '',
     rootCause: '',
-    executor: 'Carlos Silva',
+    executor: usuarioDemo()?.nome ?? '—',
     deadline: '2026-08-30',
     cost: '850',
   })
   const [verificationNote, setVerificationNote] = React.useState('')
+  const inputArquivoRef = React.useRef<HTMLInputElement>(null)
 
   const plan = nc ? actionPlans.find((p) => p.nonConformityId === nc.id) : undefined
   const ncEvidences = nc ? evidences.filter((e) => e.relatedCode === nc.code || (plan && e.relatedCode === plan.code)) : []
@@ -66,8 +66,8 @@ export function NCDetailDrawer({ nc, onClose }: NCDetailDrawerProps) {
 
   const stage = stageOf(nc, !!plan)
 
-  const handleCreatePlan = () => {
-    const created = createActionPlan(nc.id, {
+  const handleCreatePlan = async () => {
+    await createActionPlan(nc.id, {
       title: form.title,
       description: form.description || 'Correção conforme procedimento da obra e requisito da norma aplicável.',
       rootCause: form.rootCause || 'A definir na análise de causa em campo.',
@@ -76,35 +76,32 @@ export function NCDetailDrawer({ nc, onClose }: NCDetailDrawerProps) {
       cost: Number(form.cost) || 0,
     })
     setPlanOpen(false)
-    if (created) {
-      push({ tone: 'success', title: `${created.code} criado`, description: `Executor ${form.executor} notificado no aplicativo de campo.` })
-    }
   }
 
-  const handleAttach = () => {
-    if (!plan) return
-    attachEvidence(plan.id, 'Registro fotográfico da correção executada')
-    push({ tone: 'info', title: 'Evidência anexada', description: 'Foto vinculada ao plano de ação com hash de integridade.' })
+  const handleAttachClick = () => inputArquivoRef.current?.click()
+
+  const handleArquivoSelecionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!plan || !arquivo) return
+    await attachEvidence(plan.id, arquivo)
   }
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!plan) return
-    sendToVerification(plan.id)
-    push({ tone: 'info', title: 'Enviado para verificação', description: 'Um segundo engenheiro precisa aprovar o fechamento.' })
+    await sendToVerification(plan.id)
   }
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     if (!plan) return
-    approveVerification(plan.id, verificationNote || 'Correção conferida em campo. Requisito atendido.')
+    await approveVerification(plan.id, verificationNote || 'Correção conferida em campo. Requisito atendido.')
     setVerifyOpen(false)
-    push({ tone: 'success', title: `${nc.code} resolvida`, description: 'Verificação aprovada por Juliana Prado.' })
   }
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!plan) return
-    rejectVerification(plan.id, verificationNote || 'Correção incompleta — refazer o serviço.')
+    await rejectVerification(plan.id, verificationNote || 'Correção incompleta — refazer o serviço.')
     setVerifyOpen(false)
-    push({ tone: 'warning', title: 'Verificação reprovada', description: 'A ação volta para execução em campo.' })
   }
 
   return (
@@ -178,7 +175,7 @@ export function NCDetailDrawer({ nc, onClose }: NCDetailDrawerProps) {
                 {ncEvidences.map((e) => (
                   <figure key={e.id} className="overflow-hidden rounded-[3px] border border-border">
                     <div className="aspect-[4/3]">
-                      <CameraScene variant={e.sceneVariant === 'document' ? 'document' : e.sceneVariant} compact />
+                      <EvidenciaImage evidenciaId={e.id} fallbackVariant={e.sceneVariant} compact />
                     </div>
                     <figcaption className="truncate bg-white px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.06em] text-graphite-400">
                       {e.code}
@@ -252,11 +249,18 @@ export function NCDetailDrawer({ nc, onClose }: NCDetailDrawerProps) {
 
             {plan && plan.status === 'in_progress' && (
               <>
-                <Button variant="outline" size="sm" onClick={handleAttach}>
+                <input
+                  ref={inputArquivoRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,video/mp4,application/pdf"
+                  className="hidden"
+                  onChange={handleArquivoSelecionado}
+                />
+                <Button variant="outline" size="sm" onClick={handleAttachClick}>
                   <Paperclip className="h-3.5 w-3.5" />
                   Anexar evidência
                 </Button>
-                <Button size="sm" onClick={handleSend} disabled={plan.evidenceIds.length === 0 && plan.progress < 80}>
+                <Button size="sm" onClick={handleSend}>
                   <Send className="h-3.5 w-3.5" />
                   Enviar para verificação
                 </Button>
@@ -312,17 +316,10 @@ export function NCDetailDrawer({ nc, onClose }: NCDetailDrawerProps) {
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
                 <label className="tech-label mb-1.5 block">Executor</label>
-                <Select value={form.executor} onValueChange={(v) => setForm({ ...form, executor: v })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Carlos Silva">Carlos Silva</SelectItem>
-                    <SelectItem value="João Costa">João Costa</SelectItem>
-                    <SelectItem value="Diego Ramos">Diego Ramos</SelectItem>
-                    <SelectItem value="Terceirizada Alfa">Terceirizada Alfa</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input value={form.executor} disabled />
+                <p className="mt-1 text-[10.5px] text-graphite-400">
+                  Fixo nesta demo (sem tela de login) — precisa ser o mesmo usuário para poder concluir a ação depois.
+                </p>
               </div>
               <div>
                 <label className="tech-label mb-1.5 block">Prazo</label>
@@ -380,8 +377,14 @@ export function NCDetailDrawer({ nc, onClose }: NCDetailDrawerProps) {
             </div>
 
             <p className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-graphite-400">
-              Verificador: Juliana Prado · CREA-MG 168.204/D
+              Verificador: {usuarioDemo()?.nome ?? 'usuário atual'}
             </p>
+            {plan?.executor === usuarioDemo()?.nome && (
+              <p className="rounded-[3px] border border-status-warning/30 bg-status-warning-bg px-3 py-2 text-[12px] text-graphite-600">
+                Esta demo usa um único usuário fixo, que também é o executor desta ação. O backend vai recusar a
+                verificação (regra de segregação de função) — é o comportamento correto sendo demonstrado, não um erro.
+              </p>
+            )}
           </div>
 
           <DialogFooter>

@@ -1,15 +1,35 @@
 import * as React from 'react'
-import { alerts as seedAlerts } from '@/data/alerts'
-import { nonConformities as seedNCs } from '@/data/nonConformities'
-import { actionPlans as seedPlans } from '@/data/actionPlans'
-import { evidences as seedEvidences } from '@/data/evidence'
-import { cameras } from '@/data/cameras'
-import { currentWork } from '@/data/works'
+import { ApiError, ApiIndisponivelError, usuarioDemo } from '@/lib/api/client'
+import { listarCameras, listarLocais, listarModelosIa, listarRequisitosNorma, listarUsuarios } from '@/lib/api/cadastros'
+import { abrirNcDeDeteccao, descartarDeteccao, listarDeteccoes } from '@/lib/api/deteccoes'
+import { anexarEvidencia, listarEvidencias } from '@/lib/api/evidencias'
+import {
+  buscarNaoConformidade,
+  concluirAcaoCorretiva,
+  criarAcaoCorretiva,
+  historicoNaoConformidade,
+  listarNaoConformidades,
+  registrarVerificacao,
+} from '@/lib/api/naoConformidades'
+import type { NaoConformidadeApi, SeveridadeNc } from '@/lib/api/types'
+import {
+  acaoCorretivaParaActionPlan,
+  cadastrosVazios,
+  deteccaoParaAlert,
+  evidenciaParaEvidence,
+  naoConformidadeParaNC,
+  type Cadastros,
+} from '@/lib/adapters'
+import { useToast } from '@/store/toast'
 import type { ActionPlan, Alert, Evidence, NonConformity, Severity } from '@/types'
 
 /**
- * Estado vivo da operação: a triagem do engenheiro, a abertura da NC,
- * o plano de ação e a verificação acontecem sobre estes dados.
+ * Estado vivo da operação, agora espelhando o backend real (ver
+ * src/lib/api/). Sem tela de login: todo mundo age como o usuário fixo de
+ * src/lib/api/client.ts — algumas ações (ex.: aprovar/reprovar verificação)
+ * vão genuinamente falhar quando o mesmo usuário é executor e verificador,
+ * porque essa regra (segregação de função) é o núcleo do backend. Isso é
+ * esperado e é mostrado via toast com o erro real, não escondido.
  */
 
 interface ConfirmAlertInput {
@@ -29,17 +49,20 @@ interface CreatePlanInput {
 }
 
 interface AppStoreValue {
+  loading: boolean
+  /** null quando a última tentativa de falar com o backend deu certo. */
+  erroConexao: string | null
   alerts: Alert[]
   nonConformities: NonConformity[]
   actionPlans: ActionPlan[]
   evidences: Evidence[]
-  confirmAlert: (alertId: string, input: ConfirmAlertInput) => NonConformity | undefined
-  dismissAlert: (alertId: string, reason: string) => void
-  createActionPlan: (ncId: string, input: CreatePlanInput) => ActionPlan | undefined
-  attachEvidence: (planId: string, title: string) => void
-  sendToVerification: (planId: string) => void
-  approveVerification: (planId: string, note: string) => void
-  rejectVerification: (planId: string, note: string) => void
+  confirmAlert: (alertId: string, input: ConfirmAlertInput) => Promise<NonConformity | undefined>
+  dismissAlert: (alertId: string, reason: string) => Promise<void>
+  createActionPlan: (ncId: string, input: CreatePlanInput) => Promise<ActionPlan | undefined>
+  attachEvidence: (planId: string, arquivo: File) => Promise<void>
+  sendToVerification: (planId: string) => Promise<void>
+  approveVerification: (planId: string, note: string) => Promise<void>
+  rejectVerification: (planId: string, note: string) => Promise<void>
   resetDemo: () => void
   kpis: {
     compliance: number
@@ -55,241 +78,279 @@ interface AppStoreValue {
 
 const AppStoreContext = React.createContext<AppStoreValue | null>(null)
 
-const pad = (n: number, size = 5) => String(n).padStart(size, '0')
-const nowIso = () => new Date().toISOString().slice(0, 19)
-const hhmm = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-const ddmm = () => new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+const SEVERIDADE_POR_UI: Record<Severity, SeveridadeNc> = {
+  critical: 'CRITICA',
+  warning: 'MEDIA',
+  info: 'BAIXA',
+}
+
+function mensagemErro(erro: unknown): string {
+  if (erro instanceof ApiIndisponivelError) return erro.message
+  if (erro instanceof ApiError) return erro.message
+  return erro instanceof Error ? erro.message : 'Erro inesperado.'
+}
 
 export function AppStoreProvider({ children }: { children: React.ReactNode }) {
-  const [alerts, setAlerts] = React.useState<Alert[]>(seedAlerts)
-  const [nonConformities, setNonConformities] = React.useState<NonConformity[]>(seedNCs)
-  const [actionPlans, setActionPlans] = React.useState<ActionPlan[]>(seedPlans)
-  const [evidences, setEvidences] = React.useState<Evidence[]>(seedEvidences)
-  const seq = React.useRef({ nc: 127, pa: 91, ev: 231 })
+  const { push } = useToast()
+  const [loading, setLoading] = React.useState(true)
+  const [erroConexao, setErroConexao] = React.useState<string | null>(null)
+  const [alerts, setAlerts] = React.useState<Alert[]>([])
+  const [nonConformities, setNonConformities] = React.useState<NonConformity[]>([])
+  const [actionPlans, setActionPlans] = React.useState<ActionPlan[]>([])
+  const [evidences, setEvidences] = React.useState<Evidence[]>([])
+  const [camerasOnline, setCamerasOnline] = React.useState(0)
+  const [camerasTotal, setCamerasTotal] = React.useState(0)
 
-  const confirmAlert: AppStoreValue['confirmAlert'] = (alertId, input) => {
+  const cadRef = React.useRef<Cadastros>(cadastrosVazios())
+  const ncsApiRef = React.useRef<Map<string, NaoConformidadeApi>>(new Map())
+
+  const carregarTudo = React.useCallback(async () => {
+    setLoading(true)
+    try {
+      const [usuarios, cameras, locais, modelos, requisitos] = await Promise.all([
+        listarUsuarios(),
+        listarCameras(),
+        listarLocais(),
+        listarModelosIa(),
+        listarRequisitosNorma(),
+      ])
+
+      const cad = cadastrosVazios()
+      for (const u of usuarios.itens) cad.usuariosPorId.set(u.id, u)
+      for (const c of cameras.itens) cad.camerasPorId.set(c.id, c)
+      for (const l of locais.itens) cad.locaisPorId.set(l.id, l)
+      for (const m of modelos.itens) cad.modelosPorId.set(m.id, m)
+      for (const r of requisitos.itens) cad.requisitosPorId.set(r.id, r)
+
+      setCamerasTotal(cameras.itens.length)
+      setCamerasOnline(cameras.itens.filter((c) => c.status === 'ATIVA').length)
+
+      const [deteccoes, ncs, todasEvidencias] = await Promise.all([
+        listarDeteccoes({ tamanho: 100 }),
+        listarNaoConformidades({ tamanho: 100 }),
+        listarEvidencias({ tamanho: 60 }),
+      ])
+
+      const ncsAtivas = ncs.itens.filter((nc) => nc.status !== 'CANCELADA')
+      for (const nc of ncs.itens) cad.ncCodigoPorId.set(nc.id, nc.codigo)
+
+      const ncsPorId = new Map(ncsAtivas.map((nc) => [nc.id, nc]))
+      ncsApiRef.current = ncsPorId
+      cadRef.current = cad
+
+      // Ações corretivas só existem em NC que já saiu de ABERTA — evita
+      // buscar o dossiê completo (N+1) de toda NC sem plano de ação.
+      const comPossivelAcao = ncsAtivas.filter((nc) => nc.status !== 'ABERTA')
+      const detalhes = await Promise.all(
+        comPossivelAcao.map((nc) => Promise.all([buscarNaoConformidade(nc.id), historicoNaoConformidade(nc.id)])),
+      )
+
+      const planos: ActionPlan[] = []
+      detalhes.forEach(([detalhe, historico], i) => {
+        const nc = comPossivelAcao[i]
+        const ultimaAcao = detalhe.acoesCorretivas?.at(-1)
+        if (ultimaAcao) planos.push(acaoCorretivaParaActionPlan(nc, ultimaAcao, historico, cad))
+      })
+
+      setAlerts(deteccoes.itens.map((d) => deteccaoParaAlert(d, cad)))
+      setNonConformities(ncsAtivas.map((nc) => naoConformidadeParaNC(nc, cad)))
+      setActionPlans(planos)
+      setEvidences(
+        todasEvidencias.itens.map((e) =>
+          evidenciaParaEvidence(e, cad, { nc: e.naoConformidadeId ? ncsPorId.get(e.naoConformidadeId) : undefined }),
+        ),
+      )
+      setErroConexao(null)
+    } catch (erro) {
+      setErroConexao(mensagemErro(erro))
+      push({ tone: 'warning', title: 'Sem conexão com o backend', description: mensagemErro(erro) })
+    } finally {
+      setLoading(false)
+    }
+  }, [push])
+
+  React.useEffect(() => {
+    void carregarTudo()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /** Substitui a NC (e o plano, se houver) no estado local sem recarregar tudo. */
+  const atualizarNcNoEstado = React.useCallback(async (ncId: string) => {
+    const [detalhe, historico] = await Promise.all([buscarNaoConformidade(ncId), historicoNaoConformidade(ncId)])
+    ncsApiRef.current.set(ncId, detalhe)
+    cadRef.current.ncCodigoPorId.set(ncId, detalhe.codigo)
+
+    const ncAdaptada = naoConformidadeParaNC(detalhe, cadRef.current)
+    setNonConformities((prev) => {
+      const existe = prev.some((n) => n.id === ncId)
+      return existe ? prev.map((n) => (n.id === ncId ? ncAdaptada : n)) : [ncAdaptada, ...prev]
+    })
+
+    const ultimaAcao = detalhe.acoesCorretivas?.at(-1)
+    if (ultimaAcao) {
+      const plano = acaoCorretivaParaActionPlan(detalhe, ultimaAcao, historico, cadRef.current)
+      setActionPlans((prev) => {
+        const existe = prev.some((p) => p.id === plano.id)
+        return existe ? prev.map((p) => (p.id === plano.id ? plano : p)) : [plano, ...prev]
+      })
+      return { nc: ncAdaptada, plano }
+    }
+    return { nc: ncAdaptada, plano: undefined }
+  }, [])
+
+  const confirmAlert: AppStoreValue['confirmAlert'] = async (alertId, input) => {
     const alert = alerts.find((a) => a.id === alertId)
     if (!alert) return undefined
+    const ator = usuarioDemo()
 
-    seq.current.nc += 1
-    const code = `NC-${pad(seq.current.nc)}`
-    const nc: NonConformity = {
-      id: `nc-${pad(seq.current.nc)}`,
-      code,
-      title: alert.title,
-      description: alert.description,
-      blockCode: alert.blockCode,
-      locationCode: alert.locationCode,
-      locationLabel: alert.locationLabel,
-      severity: input.severity,
-      status: 'open',
-      responsible: input.responsible,
-      responsibleRole: 'Responsável designado',
-      openedAt: nowIso(),
-      deadline: input.deadline,
-      origin: 'ai',
-      alertId: alert.id,
-      standardRef: alert.standardRef,
-      standardTitle: alert.detectionClass,
-      cost: 0,
+    try {
+      await abrirNcDeDeteccao(alertId, {
+        titulo: alert.title,
+        descricao: alert.description,
+        severidade: SEVERIDADE_POR_UI[input.severity],
+        responsavelId: ator?.id,
+      })
+
+      setAlerts((prev) =>
+        prev.map((a) =>
+          a.id === alertId
+            ? { ...a, status: 'confirmed', reviewedBy: ator?.nome, reviewedAt: new Date().toISOString() }
+            : a,
+        ),
+      )
+
+      // Recarrega NC + histórico completos para achar a NC recém-criada por deteccaoId.
+      const ncs = await listarNaoConformidades({ tamanho: 100 })
+      const criada = ncs.itens.find((nc) => nc.deteccaoId === alertId)
+      if (!criada) return undefined
+
+      cadRef.current.ncCodigoPorId.set(criada.id, criada.codigo)
+      ncsApiRef.current.set(criada.id, criada)
+      const ncAdaptada = naoConformidadeParaNC(criada, cadRef.current)
+      setNonConformities((prev) => [ncAdaptada, ...prev])
+      setAlerts((prev) => prev.map((a) => (a.id === alertId ? { ...a, nonConformityId: criada.id } : a)))
+
+      push({
+        tone: 'success',
+        title: `${criada.codigo} aberta`,
+        description: `Confirmada por ${ator?.nome ?? 'usuário atual'}.`,
+      })
+      return ncAdaptada
+    } catch (erro) {
+      push({ tone: 'warning', title: 'Não foi possível abrir a não conformidade', description: mensagemErro(erro) })
+      return undefined
     }
-
-    setNonConformities((prev) => [nc, ...prev])
-    setAlerts((prev) =>
-      prev.map((a) =>
-        a.id === alertId
-          ? { ...a, status: 'confirmed', nonConformityId: nc.id, reviewedBy: 'Marcos Andrade', reviewedAt: nowIso() }
-          : a,
-      ),
-    )
-
-    seq.current.ev += 1
-    setEvidences((prev) => [
-      {
-        id: `ev-${pad(seq.current.ev, 4)}`,
-        code: `EV-${pad(seq.current.ev, 4)}`,
-        kind: 'camera',
-        title: `Frame da detecção · ${alert.title}`,
-        capturedAt: alert.detectedAt,
-        author: alert.modelCode,
-        blockCode: alert.blockCode,
-        locationLabel: alert.locationLabel,
-        relatedCode: code,
-        relatedType: 'NC',
-        hash: Math.random().toString(16).slice(2, 10),
-        sizeLabel: '1,9 MB',
-        sceneVariant: alert.sceneVariant,
-      },
-      ...prev,
-    ])
-
-    return nc
   }
 
-  const dismissAlert: AppStoreValue['dismissAlert'] = (alertId, reason) => {
-    setAlerts((prev) =>
-      prev.map((a) =>
-        a.id === alertId
-          ? { ...a, status: 'dismissed', reviewedBy: 'Marcos Andrade', reviewedAt: nowIso(), detectionClass: `${a.detectionClass} · descartado: ${reason}` }
-          : a,
-      ),
-    )
-  }
-
-  const createActionPlan: AppStoreValue['createActionPlan'] = (ncId, input) => {
-    const nc = nonConformities.find((n) => n.id === ncId)
-    if (!nc) return undefined
-
-    seq.current.pa += 1
-    const plan: ActionPlan = {
-      id: `pa-${pad(seq.current.pa, 4)}`,
-      code: `PA-${pad(seq.current.pa, 4)}`,
-      nonConformityId: nc.id,
-      nonConformityCode: nc.code,
-      title: input.title,
-      description: input.description,
-      rootCause: input.rootCause,
-      responsible: nc.responsible,
-      responsibleRole: nc.responsibleRole,
-      executor: input.executor,
-      priority: nc.severity === 'critical' ? 'critical' : nc.severity === 'warning' ? 'high' : 'medium',
-      status: 'in_progress',
-      createdAt: nowIso(),
-      deadline: input.deadline,
-      cost: input.cost,
-      progress: 15,
-      evidenceIds: [],
-      timeline: [
-        { time: hhmm(), date: ddmm(), label: `${nc.code} criada`, detail: `Severidade ${nc.severity} · prazo ${nc.deadline}`, author: 'Sistema', kind: 'system' },
-        { time: hhmm(), date: ddmm(), label: 'Responsável designado', detail: `${nc.responsible} · execução ${input.executor}`, author: 'Marcos Andrade', kind: 'engineer' },
-      ],
+  const dismissAlert: AppStoreValue['dismissAlert'] = async (alertId, _reason) => {
+    const ator = usuarioDemo()
+    try {
+      await descartarDeteccao(alertId, 'FALSO_POSITIVO')
+      setAlerts((prev) =>
+        prev.map((a) =>
+          a.id === alertId
+            ? { ...a, status: 'dismissed', reviewedBy: ator?.nome, reviewedAt: new Date().toISOString() }
+            : a,
+        ),
+      )
+      push({ tone: 'info', title: 'Registrado como falso positivo', description: 'A detecção entra na base de retreino do modelo.' })
+    } catch (erro) {
+      push({ tone: 'warning', title: 'Não foi possível descartar a detecção', description: mensagemErro(erro) })
     }
-
-    setActionPlans((prev) => [plan, ...prev])
-    setNonConformities((prev) =>
-      prev.map((n) => (n.id === ncId ? { ...n, status: 'in_progress', actionPlanId: plan.id, cost: input.cost } : n)),
-    )
-    return plan
   }
 
-  const attachEvidence: AppStoreValue['attachEvidence'] = (planId, title) => {
+  const createActionPlan: AppStoreValue['createActionPlan'] = async (ncId, input) => {
+    const ator = usuarioDemo()
+    if (!ator) return undefined
+    try {
+      // Executor = o próprio usuário fixo: é o que permite "concluir ação"
+      // funcionar sem tela de login. A verificação, por segregação de função,
+      // vai recusar esse mesmo usuário depois — de propósito, ver comentário no topo.
+      await criarAcaoCorretiva(ncId, {
+        executorId: ator.id,
+        descricao: input.description,
+        causaRaiz: input.rootCause,
+        prazo: input.deadline || undefined,
+        custo: input.cost,
+      })
+      const { plano } = await atualizarNcNoEstado(ncId)
+      if (plano) push({ tone: 'success', title: `${plano.code} criado`, description: `Executor: ${plano.executor}.` })
+      return plano
+    } catch (erro) {
+      push({ tone: 'warning', title: 'Não foi possível criar o plano de ação', description: mensagemErro(erro) })
+      return undefined
+    }
+  }
+
+  const attachEvidence: AppStoreValue['attachEvidence'] = async (planId, arquivo) => {
     const plan = actionPlans.find((p) => p.id === planId)
     if (!plan) return
-    seq.current.ev += 1
-    const ev: Evidence = {
-      id: `ev-${pad(seq.current.ev, 4)}`,
-      code: `EV-${pad(seq.current.ev, 4)}`,
-      kind: 'photo',
-      title,
-      capturedAt: nowIso(),
-      author: plan.executor,
-      blockCode: '—',
-      locationLabel: plan.title,
-      relatedCode: plan.code,
-      relatedType: 'PA',
-      hash: Math.random().toString(16).slice(2, 10),
-      sizeLabel: '2,6 MB',
-      sceneVariant: 'slab',
-    }
-    setEvidences((prev) => [ev, ...prev])
-    setActionPlans((prev) =>
-      prev.map((p) =>
-        p.id === planId
-          ? {
-              ...p,
-              evidenceIds: [...p.evidenceIds, ev.id],
-              progress: Math.max(p.progress, 80),
-              timeline: [...p.timeline, { time: hhmm(), date: ddmm(), label: 'Evidência enviada', detail: title, author: p.executor, kind: 'field' }],
-            }
-          : p,
-      ),
-    )
-  }
-
-  const sendToVerification: AppStoreValue['sendToVerification'] = (planId) => {
-    setActionPlans((prev) =>
-      prev.map((p) =>
-        p.id === planId
-          ? {
-              ...p,
-              status: 'verification',
-              progress: 100,
-              timeline: [...p.timeline, { time: hhmm(), date: ddmm(), label: 'Aguardando verificação', detail: 'Encaminhado ao engenheiro verificador', author: 'Sistema', kind: 'system' }],
-            }
-          : p,
-      ),
-    )
-    const plan = actionPlans.find((p) => p.id === planId)
-    if (plan) {
-      setNonConformities((prev) => prev.map((n) => (n.id === plan.nonConformityId ? { ...n, status: 'verification' } : n)))
+    try {
+      const evidenciaCriada = await anexarEvidencia({ arquivo, acaoCorretivaId: planId })
+      const nc = ncsApiRef.current.get(plan.nonConformityId)
+      setEvidences((prev) => [evidenciaParaEvidence(evidenciaCriada, cadRef.current, { nc }), ...prev])
+      push({ tone: 'info', title: 'Evidência anexada', description: 'Arquivo vinculado ao plano de ação com hash de integridade.' })
+    } catch (erro) {
+      push({ tone: 'warning', title: 'Não foi possível anexar a evidência', description: mensagemErro(erro) })
     }
   }
 
-  const approveVerification: AppStoreValue['approveVerification'] = (planId, note) => {
-    const plan = actionPlans.find((p) => p.id === planId)
-    setActionPlans((prev) =>
-      prev.map((p) =>
-        p.id === planId
-          ? {
-              ...p,
-              status: 'done',
-              verifiedBy: 'Juliana Prado',
-              verificationNote: note,
-              timeline: [...p.timeline, { time: hhmm(), date: ddmm(), label: 'Verificação aprovada', detail: note, author: 'Juliana Prado', kind: 'engineer' }],
-            }
-          : p,
-      ),
-    )
-    if (plan) {
-      setNonConformities((prev) =>
-        prev.map((n) => (n.id === plan.nonConformityId ? { ...n, status: 'resolved', closedAt: nowIso() } : n)),
-      )
+  const sendToVerification: AppStoreValue['sendToVerification'] = async (planId) => {
+    try {
+      await concluirAcaoCorretiva(planId)
+      const plan = actionPlans.find((p) => p.id === planId)
+      if (plan) await atualizarNcNoEstado(plan.nonConformityId)
+      push({ tone: 'info', title: 'Enviado para verificação', description: 'Um segundo engenheiro precisa aprovar o fechamento.' })
+    } catch (erro) {
+      push({ tone: 'warning', title: 'Não foi possível enviar para verificação', description: mensagemErro(erro) })
     }
   }
 
-  const rejectVerification: AppStoreValue['rejectVerification'] = (planId, note) => {
-    const plan = actionPlans.find((p) => p.id === planId)
-    setActionPlans((prev) =>
-      prev.map((p) =>
-        p.id === planId
-          ? {
-              ...p,
-              status: 'in_progress',
-              progress: 55,
-              timeline: [...p.timeline, { time: hhmm(), date: ddmm(), label: 'Verificação reprovada', detail: note, author: 'Juliana Prado', kind: 'engineer' }],
-            }
-          : p,
-      ),
-    )
-    if (plan) {
-      setNonConformities((prev) => prev.map((n) => (n.id === plan.nonConformityId ? { ...n, status: 'in_progress' } : n)))
+  const approveVerification: AppStoreValue['approveVerification'] = async (planId, note) => {
+    try {
+      await registrarVerificacao(planId, 'APROVADA', note)
+      const plan = actionPlans.find((p) => p.id === planId)
+      if (plan) await atualizarNcNoEstado(plan.nonConformityId)
+      push({ tone: 'success', title: 'Verificação aprovada', description: 'A não conformidade foi encerrada.' })
+    } catch (erro) {
+      // Aqui é onde a segregação de função aparece de verdade: como não há
+      // troca de usuário nesta demo, o executor da ação e quem tenta
+      // verificar são a mesma pessoa — e o backend recusa (ver comentário
+      // no topo do arquivo). É o comportamento CORRETO, não um bug.
+      push({ tone: 'warning', title: 'Verificação recusada pelo backend', description: mensagemErro(erro) })
     }
   }
 
-  const resetDemo = () => {
-    setAlerts(seedAlerts)
-    setNonConformities(seedNCs)
-    setActionPlans(seedPlans)
-    setEvidences(seedEvidences)
-    seq.current = { nc: 127, pa: 91, ev: 231 }
+  const rejectVerification: AppStoreValue['rejectVerification'] = async (planId, note) => {
+    try {
+      await registrarVerificacao(planId, 'REPROVADA', note)
+      const plan = actionPlans.find((p) => p.id === planId)
+      if (plan) await atualizarNcNoEstado(plan.nonConformityId)
+      push({ tone: 'warning', title: 'Verificação reprovada', description: 'A ação volta para execução em campo.' })
+    } catch (erro) {
+      push({ tone: 'warning', title: 'Verificação recusada pelo backend', description: mensagemErro(erro) })
+    }
   }
 
   const kpis = React.useMemo(() => {
     const active = alerts.filter((a) => a.status === 'pending')
     const open = nonConformities.filter((n) => n.status !== 'resolved')
     return {
-      compliance: currentWork.compliance,
+      // Sem indicador equivalente no backend — decorativo, ver decisão do produto.
+      compliance: 91.8,
       complianceDelta: 3.4,
       activeAlerts: active.length,
       criticalAlerts: active.filter((a) => a.severity === 'critical').length,
       openNCs: open.length,
-      dueToday: open.filter((n) => n.deadline <= '2026-08-29').length,
-      camerasOnline: cameras.filter((c) => c.status === 'online').length,
-      camerasTotal: cameras.length,
+      dueToday: open.filter((n) => n.deadline <= new Date().toISOString().slice(0, 10)).length,
+      camerasOnline,
+      camerasTotal,
     }
-  }, [alerts, nonConformities])
+  }, [alerts, nonConformities, camerasOnline, camerasTotal])
 
   const value: AppStoreValue = {
+    loading,
+    erroConexao,
     alerts,
     nonConformities,
     actionPlans,
@@ -301,7 +362,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     sendToVerification,
     approveVerification,
     rejectVerification,
-    resetDemo,
+    resetDemo: () => void carregarTudo(),
     kpis,
   }
 

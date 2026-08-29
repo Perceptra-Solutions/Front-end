@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input, Textarea } from '@/components/ui/input'
 import { SeverityBadge, AlertStatusBadge } from '@/components/shared/StatusBadge'
 import { useAppStore } from '@/store/AppStore'
-import { useToast } from '@/store/toast'
+import { usuarioDemo } from '@/lib/api/client'
 import { categoryLabel } from '@/components/alerts/AlertCard'
 import { getModelByCode } from '@/data/aiModels'
 import { cn, formatDate, formatTime } from '@/lib/utils'
@@ -30,15 +30,12 @@ export default function AlertDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { alerts, nonConformities, confirmAlert, dismissAlert } = useAppStore()
-  const { push } = useToast()
 
   const alert = alerts.find((a) => a.id === id || a.code === id)
   const [showBoxes, setShowBoxes] = React.useState(true)
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [dismissOpen, setDismissOpen] = React.useState(false)
   const [severity, setSeverity] = React.useState<Severity>('critical')
-  const [responsible, setResponsible] = React.useState('Carlos Silva')
-  const [deadline, setDeadline] = React.useState('2026-08-30')
   const [reason, setReason] = React.useState(dismissReasons[0])
   const [note, setNote] = React.useState('')
 
@@ -67,26 +64,14 @@ export default function AlertDetail() {
   const stage = alert.status === 'pending' ? 'triage' : alert.status === 'confirmed' ? 'nonconformity' : 'triage'
   const aboveThreshold = model ? alert.confidence / 100 >= model.threshold : true
 
-  const handleConfirm = () => {
-    const nc = confirmAlert(alert.id, { severity, responsible, deadline })
+  const handleConfirm = async () => {
+    await confirmAlert(alert.id, { severity, responsible: usuarioDemo()?.nome ?? '', deadline: '' })
     setConfirmOpen(false)
-    if (nc) {
-      push({
-        tone: 'success',
-        title: `${nc.code} aberta`,
-        description: `Ocorrência confirmada por Marcos Andrade · responsável ${responsible}.`,
-      })
-    }
   }
 
-  const handleDismiss = () => {
-    dismissAlert(alert.id, reason)
+  const handleDismiss = async () => {
+    await dismissAlert(alert.id, reason)
     setDismissOpen(false)
-    push({
-      tone: 'info',
-      title: 'Registrado como falso positivo',
-      description: 'A detecção entra na base de retreino do modelo.',
-    })
   }
 
   return (
@@ -300,7 +285,8 @@ export default function AlertDetail() {
                   </div>
 
                   <p className="text-center font-mono text-[10px] uppercase tracking-[0.1em] text-graphite-400">
-                    Registrado em nome de Marcos Andrade · CREA-MG 154.882/D
+                    Registrado em nome de {usuarioDemo()?.nome ?? 'usuário atual'}
+                    {usuarioDemo()?.crea ? ` · CREA ${usuarioDemo()?.crea}` : ''}
                   </p>
                 </CardContent>
               </Card>
@@ -358,39 +344,27 @@ export default function AlertDetail() {
           </DialogHeader>
 
           <div className="space-y-4 px-5 py-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="tech-label mb-1.5 block">Severidade</label>
-                <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="critical">Crítica</SelectItem>
-                    <SelectItem value="warning">Média</SelectItem>
-                    <SelectItem value="info">Baixa</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="tech-label mb-1.5 block">Prazo de correção</label>
-                <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
-              </div>
-            </div>
-
             <div>
-              <label className="tech-label mb-1.5 block">Responsável pela correção</label>
-              <Select value={responsible} onValueChange={setResponsible}>
+              <label className="tech-label mb-1.5 block">Severidade</label>
+              <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Carlos Silva">Carlos Silva · Encarregado de obra</SelectItem>
-                  <SelectItem value="Ana Souza">Ana Souza · Técnica de segurança</SelectItem>
-                  <SelectItem value="João Costa">João Costa · Auxiliar de segurança</SelectItem>
-                  <SelectItem value="Rafael Menezes">Rafael Menezes · Engenheiro estrutural</SelectItem>
+                  <SelectItem value="critical">Crítica</SelectItem>
+                  <SelectItem value="warning">Média</SelectItem>
+                  <SelectItem value="info">Baixa</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="mt-1.5 text-[10.5px] text-graphite-400">
+                O prazo de correção é calculado automaticamente pela severidade (SLA: crítica 24h, média 7d, baixa 15d).
+              </p>
+            </div>
+
+            <div>
+              <label className="tech-label mb-1.5 block">Responsável pela correção</label>
+              <Input value={usuarioDemo()?.nome ?? '—'} disabled />
+              <p className="mt-1.5 text-[10.5px] text-graphite-400">Fixo nesta demo (sem tela de login).</p>
             </div>
 
             <div>

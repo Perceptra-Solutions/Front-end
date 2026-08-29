@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { currentWork } from '@/data/works'
-import { currentUser } from '@/data/users'
+import { usuarioDemo } from '@/lib/api/client'
 import { useAppStore } from '@/store/AppStore'
 import { cn, formatTime, timeAgo } from '@/lib/utils'
 import { SeverityBadge } from '@/components/shared/StatusBadge'
@@ -149,16 +149,18 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className={cn('flex items-center gap-2 rounded-[3px] px-1.5 py-1 transition-colors hover:bg-graphite-100')}>
-              <Avatar name={currentUser.name} size="sm" />
+              <Avatar name={usuarioDemo()?.nome ?? '—'} size="sm" />
               <div className="hidden text-left leading-tight md:block">
-                <p className="text-[12.5px] font-500 text-graphite-900">{currentUser.name}</p>
-                <p className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-graphite-400">{currentUser.roleLabel}</p>
+                <p className="text-[12.5px] font-500 text-graphite-900">{usuarioDemo()?.nome ?? 'Carregando…'}</p>
+                <p className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-graphite-400">
+                  {usuarioDemo()?.papel === 'GESTOR' ? 'Gestor' : 'Engenheiro responsável'}
+                </p>
               </div>
               <ChevronDown className="hidden h-3.5 w-3.5 text-graphite-400 md:block" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-[220px]">
-            <DropdownMenuLabel>{currentUser.crea}</DropdownMenuLabel>
+            <DropdownMenuLabel>{usuarioDemo()?.crea ?? usuarioDemo()?.email ?? '—'}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate('/profile')}>Perfil</DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate('/settings')}>Configurações</DropdownMenuItem>

@@ -5,7 +5,7 @@ import { Logo } from './Logo'
 import { footerNav, navGroups, type NavItem } from './nav'
 import { useAppStore } from '@/store/AppStore'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { currentUser } from '@/data/users'
+import { usuarioDemo } from '@/lib/api/client'
 
 interface SidebarProps {
   collapsed: boolean
@@ -128,8 +128,10 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
               <HardHat className="h-4 w-4 text-technical-300" />
             </span>
             <div className="min-w-0 leading-tight">
-              <p className="truncate text-[12.5px] font-500 text-white">{currentUser.name}</p>
-              <p className="truncate font-mono text-[9.5px] uppercase tracking-[0.1em] text-navy-100/45">{currentUser.crea}</p>
+              <p className="truncate text-[12.5px] font-500 text-white">{usuarioDemo()?.nome ?? 'Carregando…'}</p>
+              <p className="truncate font-mono text-[9.5px] uppercase tracking-[0.1em] text-navy-100/45">
+                {usuarioDemo()?.crea ?? usuarioDemo()?.papel ?? ''}
+              </p>
             </div>
           </div>
         )}
