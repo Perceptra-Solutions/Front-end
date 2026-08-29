@@ -62,6 +62,7 @@ export class ApiIndisponivelError extends Error {
 let tokenEmMemoria: string | null = null
 let usuarioAtual: UsuarioAutenticado | null = null
 let loginEmVoo: Promise<string> | null = null
+let perfilEmVoo: Promise<UsuarioAutenticado | null> | null = null
 
 function lerTokenCache(): string | null {
   if (tokenEmMemoria) return tokenEmMemoria
@@ -124,9 +125,44 @@ async function autenticar(): Promise<string> {
   return loginEmVoo
 }
 
-/** Usuário fixo atual — só populado depois da primeira chamada autenticada. */
+/**
+ * Usuário fixo atual, de forma síncrona. Pode ser `null` antes de
+ * `garantirUsuario()` resolver — quem precisa do papel para decidir o que
+ * mostrar deve usar `garantirUsuario()`, não isto.
+ */
 export function usuarioDemo(): UsuarioAutenticado | null {
   return usuarioAtual
+}
+
+/**
+ * Devolve o usuário do token, buscando em `/auth/eu` quando necessário.
+ *
+ * Necessário porque `usuarioAtual` só era preenchido pela RESPOSTA do login,
+ * e o login é pulado quando já existe token em `localStorage`. Ou seja: a
+ * partir do segundo carregamento da página, `usuarioDemo()` ficava `null`
+ * para sempre — a topbar mostrava "Carregando…" e rotulava qualquer um como
+ * "Engenheiro responsável", e o `AppStore` desistia em silêncio de criar
+ * plano de ação (`if (!ator) return undefined`).
+ *
+ * `/auth/eu` existe no backend exatamente para isto (ver AuthController:
+ * "o front usa para montar o menu e esconder ações sem permissão").
+ */
+export async function garantirUsuario(): Promise<UsuarioAutenticado | null> {
+  if (usuarioAtual) return usuarioAtual
+
+  if (!perfilEmVoo) {
+    perfilEmVoo = requisitar<UsuarioAutenticado>('GET', '/auth/eu')
+      .then((usuario) => {
+        usuarioAtual = usuario
+        return usuario
+      })
+      .catch(() => null)
+      .finally(() => {
+        perfilEmVoo = null
+      })
+  }
+
+  return perfilEmVoo
 }
 
 interface Opcoes {

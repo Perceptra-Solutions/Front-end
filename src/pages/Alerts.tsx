@@ -6,13 +6,12 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAppStore } from '@/store/AppStore'
-import { cameras } from '@/data/cameras'
 import type { Alert, AlertStatus } from '@/types'
 
 type SeverityFilter = 'all' | Alert['severity']
 
 export default function Alerts() {
-  const { alerts, kpis } = useAppStore()
+  const { alerts, kpis, cameras } = useAppStore()
   const [status, setStatus] = React.useState<AlertStatus | 'all'>('pending')
   const [severity, setSeverity] = React.useState<SeverityFilter>('all')
   const [camera, setCamera] = React.useState('all')
@@ -91,9 +90,9 @@ export default function Alerts() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas as câmeras</SelectItem>
-                {cameras.slice(0, 12).map((c) => (
-                  <SelectItem key={c.id} value={c.code}>
-                    {c.code} · {c.locationCode}
+                {cameras.map((c) => (
+                  <SelectItem key={c.id} value={c.identificador}>
+                    {c.identificador}
                   </SelectItem>
                 ))}
               </SelectContent>

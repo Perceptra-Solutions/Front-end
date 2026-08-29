@@ -56,6 +56,10 @@ export interface ModeloIaApi {
   tipoDeteccao: string
   limiarConfianca: number
   ativo: boolean
+  /** precision / recall / mAP gravados na publicação. `null` quando não informados. */
+  metricas: Record<string, unknown> | null
+  hashArtefato: string | null
+  publicadoEm: string
 }
 
 export interface DeteccaoApi {
@@ -161,4 +165,57 @@ export interface ResumoPainelApi {
     taxa: number
   }[]
   saudeDaFrota: { total: number; ativas: number; offline: number; manutencao: number }
+}
+
+export type TipoRelatorio = 'NAO_CONFORMIDADE' | 'PERIODICO' | 'OBRA'
+export type StatusObra = 'PLANEJAMENTO' | 'EM_ANDAMENTO' | 'PARALISADA' | 'CONCLUIDA'
+
+export interface ObraApi {
+  id: string
+  codigo: string
+  nome: string
+  endereco: string | null
+  cidade: string | null
+  uf: string | null
+  status: StatusObra
+  responsavelTecnicoId: string | null
+  inicioPrevisto: string | null
+  fimPrevisto: string | null
+}
+
+/** Uma NC como ficou congelada no relatório, na ordem em que aparece no documento. */
+export interface ItemRelatorioApi {
+  ordem: number
+  naoConformidadeId: string
+  codigo: string
+  titulo: string
+  severidade: SeveridadeNc
+  status: StatusNc
+}
+
+/**
+ * `arquivoUri` não existe aqui de propósito: é a chave interna do storage e
+ * a API nunca a devolve. O download sai por `/relatorios/{id}/arquivo`.
+ */
+export interface RelatorioApi {
+  id: string
+  obraId: string
+  tipo: TipoRelatorio
+  titulo: string
+  periodoInicio: string | null
+  periodoFim: string | null
+  geradoPor: string | null
+  geradoEm: string
+  totalItens: number
+  hashSha256: string | null
+  urlTemporaria: string | null
+  /** Só vem no detalhe (`GET /relatorios/:id`), não na listagem. */
+  itens?: ItemRelatorioApi[]
+}
+
+/** Resposta de `/relatorios/:id/integridade` e `/evidencias/:id/integridade`. */
+export interface IntegridadeApi {
+  integra: boolean
+  hashArmazenado: string
+  hashRecalculado: string
 }

@@ -5,7 +5,6 @@ import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { currentWork } from '@/data/works'
 import { usuarioDemo } from '@/lib/api/client'
 import { useAppStore } from '@/store/AppStore'
 import { cn, formatTime, timeAgo } from '@/lib/utils'
@@ -13,7 +12,7 @@ import { SeverityBadge } from '@/components/shared/StatusBadge'
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const navigate = useNavigate()
-  const { alerts, kpis, resetDemo } = useAppStore()
+  const { alerts, kpis, resetDemo, obraAtual } = useAppStore()
   const [query, setQuery] = React.useState('')
   const [lastUpdate, setLastUpdate] = React.useState(() => new Date())
 
@@ -51,9 +50,9 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
           <p className="tech-label">Obra atual</p>
           <div className="flex items-center gap-2">
             <Link to="/works" className="truncate font-display text-[15.5px] font-600 uppercase tracking-[0.02em] text-navy-900 hover:text-technical-700">
-              {currentWork.name}
+              {obraAtual?.nome ?? 'Carregando obra…'}
             </Link>
-            <span className="hidden font-mono text-[10.5px] text-graphite-300 sm:inline">{currentWork.code}</span>
+            <span className="hidden font-mono text-[10.5px] text-graphite-300 sm:inline">{obraAtual?.codigo ?? '—'}</span>
           </div>
         </div>
         <span className="ml-2 hidden items-center gap-1.5 rounded-[2px] border border-status-success/25 bg-status-success-bg px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-status-success md:inline-flex">

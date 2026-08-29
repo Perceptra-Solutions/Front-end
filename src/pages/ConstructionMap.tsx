@@ -2,6 +2,8 @@ import * as React from 'react'
 import { Link } from 'react-router-dom'
 import { Layers, MapPin } from 'lucide-react'
 import { PageBody, PageHeader } from '@/components/shared/PageHeader'
+import { SemDadoNoBackend } from '@/components/shared/EstadoPagina'
+import { cameraParaPlanta } from '@/lib/adapters'
 import { SitePlan, zones } from '@/components/map/SitePlan'
 import { DetectionFrame } from '@/components/cameras/DetectionFrame'
 import { Drawer, DrawerBody, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
@@ -10,15 +12,18 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatusDot } from '@/components/shared/StatusBadge'
 import { SeverityBadge } from '@/components/shared/StatusBadge'
-import { cameras } from '@/data/cameras'
-import { currentWork } from '@/data/works'
 import { useAppStore } from '@/store/AppStore'
 import { formatDate, formatTime } from '@/lib/utils'
 import type { Camera } from '@/types'
 
 export default function ConstructionMap() {
-  const { alerts } = useAppStore()
+  const { alerts, obraAtual, cameras: camerasApi } = useAppStore()
   const [selected, setSelected] = React.useState<Camera | null>(null)
+
+  // Câmeras REAIS desenhadas na prancha. A posição vem de âncoras fixas
+  // (ver cameraParaPlanta): o backend não guarda coordenada de câmera, então
+  // identificador e status são reais e só o ponto no desenho é esquemático.
+  const cameras = React.useMemo(() => camerasApi.map((c, i) => cameraParaPlanta(c, i)), [camerasApi])
 
   const pending = alerts.filter((a) => a.status === 'pending')
   const alertCountByCamera = pending.reduce<Record<string, number>>((acc, a) => {
@@ -37,7 +42,7 @@ export default function ConstructionMap() {
         meta={[
           { label: 'Escala', value: '1:500' },
           { label: 'Prancha', value: 'IMP-01' },
-          { label: 'Coordenadas', value: currentWork.coordinates },
+          { label: 'Obra', value: obraAtual?.codigo ?? '—' },
         ]}
       />
 
@@ -45,7 +50,7 @@ export default function ConstructionMap() {
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
           <Card className="min-w-0 overflow-hidden">
             <CardHeader>
-              <CardTitle>Implantação · Residencial Horizonte</CardTitle>
+              <CardTitle>Implantação · {obraAtual?.nome ?? '—'}</CardTitle>
               <div className="flex flex-wrap items-center gap-4">
                 <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-graphite-400">
                   <span className="h-2 w-2 rounded-full bg-technical-600" /> câmera ativa
@@ -76,7 +81,11 @@ export default function ConstructionMap() {
               </CardHeader>
               <div className="divide-y divide-border">
                 {zones.map((z) => {
-                  const zoneCameras = cameras.filter((c) => c.locationCode === z.code || c.blockCode.includes(z.label.toUpperCase()))
+                  // Sem coordenada real, não há como dizer que câmera está em
+                  // que setor: o vínculo abaixo usa o nome do local cadastrado.
+                  const zoneCameras = cameras.filter(
+                    (c) => c.locationCode === z.code || c.blockCode.toUpperCase().includes(z.label.toUpperCase()),
+                  )
                   return (
                     <div key={z.code} className="flex items-center justify-between gap-3 px-4 py-2.5">
                       <div className="min-w-0">
@@ -120,6 +129,12 @@ export default function ConstructionMap() {
             </Card>
           </div>
         </div>
+        <SemDadoNoBackend>
+          As câmeras da prancha são as cadastradas no backend (identificador, status e detecções são reais), mas{' '}
+          <b>a posição de cada uma é esquemática</b>: a tabela <code className="font-mono text-[11.5px]">camera</code> não
+          guarda coordenada. Os setores, a escala e o número da prancha também são ilustrativos — não há planta de
+          implantação no schema.
+        </SemDadoNoBackend>
       </PageBody>
 
       {/* detalhe da câmera */}

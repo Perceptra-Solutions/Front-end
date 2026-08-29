@@ -1,10 +1,39 @@
+import * as React from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ChartFrame, ChartTooltip } from '@/components/reports/ChartFrame'
-import { dailyDetections } from '@/data/analytics'
+import { useAppStore } from '@/store/AppStore'
 import { chartAxis, chartCategorical, chartMargin } from '@/lib/chartTheme'
 
-/** Volume de detecções ao longo do turno e quanto disso o engenheiro confirmou. */
+/**
+ * Volume de detecções por hora e quanto disso o engenheiro confirmou.
+ *
+ * Derivado das detecções REAIS já carregadas no store (`alerts`), agrupando
+ * por hora de `detectedAt`. Antes vinha de uma série fixa em
+ * `src/data/analytics.ts`, que não tinha relação com o banco: o gráfico
+ * mostrava movimento mesmo com o backend vazio.
+ */
 export function DetectionActivityChart() {
+  const { alerts } = useAppStore()
+
+  const serie = React.useMemo(() => {
+    // 24 baldes fixos: o eixo precisa existir mesmo nas horas sem detecção,
+    // senão a linha "pula" e some o vazio operacional (madrugada, por ex.).
+    const baldes = Array.from({ length: 24 }, (_, h) => ({
+      hora: `${String(h).padStart(2, '0')}h`,
+      deteccoes: 0,
+      confirmadas: 0,
+    }))
+
+    for (const a of alerts) {
+      const hora = new Date(a.detectedAt).getHours()
+      if (Number.isNaN(hora)) continue
+      baldes[hora].deteccoes += 1
+      if (a.status === 'confirmed') baldes[hora].confirmadas += 1
+    }
+
+    return baldes
+  }, [alerts])
+
   return (
     <ChartFrame
       title="Atividade da IA no turno"
@@ -14,10 +43,10 @@ export function DetectionActivityChart() {
         { label: 'Detecções', color: chartCategorical[0] },
         { label: 'Confirmadas', color: chartCategorical[1] },
       ]}
-      hint="A diferença entre as duas linhas é o filtro humano: o que a IA aponta e o engenheiro não confirma."
+      hint="A diferença entre as duas linhas é o filtro humano: o que a IA aponta e o engenheiro não confirma. Série calculada sobre as detecções carregadas."
     >
       <ResponsiveContainer width="100%" height={200}>
-        <AreaChart data={dailyDetections} margin={chartMargin}>
+        <AreaChart data={serie} margin={chartMargin}>
           <defs>
             <linearGradient id="grad-det" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={chartCategorical[0]} stopOpacity={0.22} />

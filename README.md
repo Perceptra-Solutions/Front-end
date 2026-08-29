@@ -45,8 +45,13 @@ npm run lint      # apenas a checagem de tipos (tsc --noEmit)
 | Gráficos | Recharts |
 | 3D | three.js (WebGL) — apenas no gêmeo digital |
 
-Sem back-end: os dados são mockados em `src/data` e o estado da operação vive em um store React
-(`src/store/AppStore.tsx`), o que permite executar o fluxo completo durante a apresentação.
+**Todo dado vem do backend.** Não há mais mock: a pasta `src/data` foi removida e cada tela consome a
+API real (`src/lib/api/`). O estado compartilhado da operação vive num store React
+(`src/store/AppStore.tsx`), que carrega usuário, obra, câmeras, modelos, detecções, NCs e evidências
+numa passada só.
+
+Onde o backend genuinamente não tem o dado, a tela **diz isso** em vez de preencher com um valor
+plausível — numa tela de gestão, número inventado é indistinguível de medição errada.
 
 ---
 
@@ -89,12 +94,12 @@ demonstração** com os dados originais — útil entre uma apresentação e out
 | `/non-conformities` | Não Conformidades | Tabela profissional + ficha lateral com o ciclo completo |
 | `/action-plans` | Planos de Ação | Lista, detalhe, timeline da execução e evidências |
 | `/evidence` | Evidências | Galeria por tipo (foto, vídeo, câmera, documento) com hash de integridade |
-| `/reports` | Relatórios | Sete gráficos Recharts: conformidade, categorias, tipos, MTTR, câmeras, falsos positivos, modelos |
-| `/works` | Obras e Locais | Três empreendimentos com avanço físico, conformidade e parque de câmeras |
-| `/cameras` | Câmeras | Ficha técnica dos 20 equipamentos e o modelo de IA vinculado |
-| `/users` | Usuários e Papéis | Equipe e a regra de segregação executor × verificador |
-| `/standards` | Requisitos e Normas | NR-18, NR-35, NR-10, NR-06 e NBR 15575 com itens e ocorrências |
-| `/ai-models` | Modelos de IA | Precision, recall, F1, limiar de confiança e taxa de falsos positivos |
+| `/reports` | Relatórios | **Indicadores reais de `/painel/resumo`**, emissão de relatório PBQP-H (snapshot congelado + SHA-256), lista dos emitidos com download e conferência de integridade, e quatro gráficos derivados de dado real |
+| `/works` | Obras e Locais | Obras cadastradas com NCs em aberto, parque de câmeras, locais e período previsto |
+| `/cameras` | Câmeras | Parque real com modelo de IA vinculado e heartbeat + **provisionamento** (emitir/revogar credencial, gravar URL de stream cifrada) |
+| `/users` | Usuários e Papéis | Equipe real com NCs sob responsabilidade e a regra de segregação executor × verificador |
+| `/standards` | Requisitos e Normas | Requisitos agrupados por norma, com as NCs que citam cada item |
+| `/ai-models` | Modelos de IA | Versões publicadas, limiar, hash do artefato, métricas do treino e **taxa real de falso positivo** |
 | `/settings` · `/profile` | Configurações · Perfil | Preferências da obra e registro do responsável técnico |
 
 ---
@@ -118,7 +123,7 @@ src/
                      tabs, tooltip, input, select, progress, separator, avatar, switch,
                      dropdown-menu
   pages/             uma tela por rota
-  data/              dados mockados da obra (alertas, câmeras, NCs, planos, normas…)
+  hooks/             useRecurso (carregamento com loading/erro/cancelamento)
   types/             contratos de domínio
   store/             AppStore (estado vivo da operação) e toast
   lib/               utils (datas, formatação) e chartTheme (paleta dos gráficos)
@@ -148,13 +153,31 @@ Central de operações de obra, não dashboard SaaS genérico:
   dão escala. Iluminação de fim de tarde com sol direcional e sombra projetada (PCF soft), reflexo de
   ambiente via PMREM, tone mapping ACES filmic. Nenhum arquivo de modelo externo.
 
-### Dados mockados
+### Dados
 
-18 alertas · 20 câmeras · 8 não conformidades · 5 planos de ação · 12 evidências · 3 obras · 5 usuários ·
-3 modelos de IA · 5 normas — todos com nomenclatura real de canteiro.
+Tudo vem da API. Suba o backend (`docker compose up -d --build` e `npm run db:seed`) antes de abrir o
+front — sem ele as telas mostram o estado de erro com a mensagem real da API, não uma tela vazia.
 
-Os indicadores do painel são **derivados dos dados**, não fixos: confirmar ou descartar uma detecção
-muda os números na hora.
+Os indicadores são derivados do banco: confirmar ou descartar uma detecção muda os números na hora,
+porque a tela relê do backend.
+
+**O que foi removido por não existir no schema** (cada tela traz a nota correspondente): avanço físico
+e área da obra, índice de conformidade mensal, MTTR mensal, série de falso positivo por semana,
+latência de inferência, IP/resolução/FPS de câmera, último acesso de usuário, vínculo usuário↔obra e o
+papel AUDITOR.
+
+### Papéis e o que cada um pode fazer
+
+Nenhum usuário do seed faz tudo — isso é o backend aplicando papéis de verdade:
+
+| Usuário | Papel | Faz | Não faz |
+|---|---|---|---|
+| `ana@perceptra.dev` | ENGENHEIRO | tria detecção, cria plano de ação | emitir relatório, provisionar câmera |
+| `bruno@perceptra.dev` | ENGENHEIRO | verifica a ação da Ana (segregação de função) | — |
+| `gestora@perceptra.dev` | GESTOR | emite relatório, provisiona câmera, cancela NC | triar detecção |
+
+O front mostra a ação **desabilitada com o motivo** em vez de deixar clicar e tomar 403. Troque
+`VITE_DEMO_EMAIL` para alternar de persona.
 
 ---
 

@@ -1,5 +1,5 @@
 import { apiGet } from './client'
-import type { CameraApi, LocalApi, ModeloIaApi, PaginaApi, UsuarioApi } from './types'
+import type { CameraApi, LocalApi, ModeloIaApi, ObraApi, PaginaApi, UsuarioApi } from './types'
 
 export interface RequisitoNormaApi {
   id: string
@@ -7,6 +7,11 @@ export interface RequisitoNormaApi {
   item: string
   categoria: string
   descricao: string
+}
+
+/** Alimenta o seletor de obra — o filtro de todo o resto do sistema. */
+export function listarObras(signal?: AbortSignal) {
+  return apiGet<PaginaApi<ObraApi>>('/obras', { tamanho: 100 }, signal)
 }
 
 export function listarUsuarios(filtro: { papel?: 'GESTOR' | 'ENGENHEIRO' } = {}, signal?: AbortSignal) {

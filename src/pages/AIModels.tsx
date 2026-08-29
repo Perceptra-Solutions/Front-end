@@ -1,147 +1,195 @@
-import { Activity, Cpu, Gauge, Timer } from 'lucide-react'
+import { Camera, Cpu, Fingerprint } from 'lucide-react'
 import { PageBody, PageHeader } from '@/components/shared/PageHeader'
+import { Carregando, ErroConexao, SemDadoNoBackend, Vazio } from '@/components/shared/EstadoPagina'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { aiModels } from '@/data/aiModels'
-import { cameras } from '@/data/cameras'
+import { useRecurso } from '@/hooks/useRecurso'
+import { listarCameras, listarModelosIa } from '@/lib/api/cadastros'
+import { buscarResumoPainel } from '@/lib/api/painel'
 import { formatDate, pct } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
+/** Só números viram barra de métrica; o resto do jsonb é exibido como texto. */
+function metricasNumericas(metricas: Record<string, unknown> | null): { chave: string; valor: number }[] {
+  if (!metricas) return []
+  return Object.entries(metricas)
+    .filter((par): par is [string, number] => typeof par[1] === 'number')
+    .map(([chave, valor]) => ({ chave, valor: valor <= 1 ? valor * 100 : valor }))
+}
+
 export default function AIModels() {
+  const { dados, carregando, erro, recarregar } = useRecurso(async (signal) => {
+    const [modelos, cameras, resumo] = await Promise.all([
+      listarModelosIa(signal),
+      listarCameras({}, signal),
+      buscarResumoPainel(undefined, signal),
+    ])
+
+    // A taxa de falso positivo é o único indicador de qualidade REAL aqui:
+    // vem de `/painel/resumo`, calculada por versão de modelo sobre as
+    // detecções já triadas (PENDENTE fica fora do denominador).
+    const desempenhoPorModelo = new Map(resumo.falsoPositivoPorModelo.map((f) => [f.modeloId, f]))
+    const camerasPorModelo = new Map<string, number>()
+    for (const c of cameras.itens) {
+      if (!c.modeloIaId) continue
+      camerasPorModelo.set(c.modeloIaId, (camerasPorModelo.get(c.modeloIaId) ?? 0) + 1)
+    }
+
+    return modelos.itens
+      .map((modelo) => ({
+        modelo,
+        desempenho: desempenhoPorModelo.get(modelo.id),
+        cameras: camerasPorModelo.get(modelo.id) ?? 0,
+      }))
+      .sort((a, b) =>
+        a.modelo.nome === b.modelo.nome
+          ? b.modelo.versao.localeCompare(a.modelo.versao)
+          : a.modelo.nome.localeCompare(b.modelo.nome),
+      )
+  })
+
+  const linhas = dados ?? []
+  const ativos = linhas.filter((l) => l.modelo.ativo).length
+
   return (
     <>
       <PageHeader
         eyebrow="Inteligência artificial · Inferência"
         title="Modelos de IA"
-        description="Os modelos que rodam nas câmeras da obra. O limiar de confiança é o botão que regula quanto ruído chega ao engenheiro."
+        description="Versões publicadas do catálogo. Cada versão é imutável: reajustar limiar ou aposentar é permitido, reescrever não."
         meta={[
-          { label: 'Modelos', value: String(aiModels.length) },
-          { label: 'Detecções hoje', value: String(aiModels.reduce((s, m) => s + m.detectionsToday, 0)) },
+          { label: 'Versões', value: carregando ? '—' : String(linhas.length) },
+          { label: 'Ativas', value: carregando ? '—' : String(ativos) },
         ]}
       />
 
       <PageBody className="space-y-5">
-        <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
-          {aiModels.map((m) => {
-            const modelCameras = cameras.filter((c) => c.aiModelCode === m.code)
-            return (
-              <Card key={m.id}>
-                <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3.5">
-                  <div className="min-w-0">
-                    <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-graphite-400">{m.code}</p>
-                    <h3 className="mt-0.5 font-display text-[18px] font-700 uppercase tracking-[0.02em] text-navy-900">
-                      {m.name}
-                    </h3>
-                    <p className="mt-0.5 text-[13px] text-graphite-500">{m.purpose}</p>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    <Badge variant={m.status === 'active' ? 'success' : m.status === 'training' ? 'warning' : 'default'}>
-                      {m.status === 'active' ? 'Ativo' : m.status === 'training' ? 'Em treino' : 'Descontinuado'}
-                    </Badge>
-                    <span className="font-mono text-[13px] font-600 text-technical-700">{m.version}</span>
-                  </div>
-                </div>
+        {carregando && <Carregando texto="Carregando catálogo de modelos…" />}
+        {erro && !carregando && <ErroConexao mensagem={erro} aoTentarNovamente={recarregar} />}
+        {!carregando && !erro && linhas.length === 0 && (
+          <Vazio titulo="Nenhum modelo publicado" descricao="Rode o seed do backend (npm run db:seed) para popular a demo." />
+        )}
 
-                <CardContent className="space-y-4">
-                  {/* métricas */}
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      { label: 'Precision', value: m.precision },
-                      { label: 'Recall', value: m.recall },
-                      { label: 'F1', value: m.f1 },
-                    ].map((metric) => (
-                      <div key={metric.label} className="rounded-[3px] border border-border bg-graphite-50 px-3 py-2">
-                        <p className="tech-label">{metric.label}</p>
-                        <p className="mt-0.5 font-mono text-[17px] font-600 tabular-nums text-navy-900">{pct(metric.value)}</p>
-                        <Progress
-                          value={metric.value}
-                          className="mt-1.5 h-[3px]"
-                          indicatorClassName={cn(metric.value >= 92 ? 'bg-status-success' : 'bg-status-warning')}
-                        />
+        {!carregando && !erro && linhas.length > 0 && (
+          <>
+            <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
+              {linhas.map(({ modelo, desempenho, cameras }) => {
+                const metricas = metricasNumericas(modelo.metricas)
+                return (
+                  <Card key={modelo.id}>
+                    <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3.5">
+                      <div className="min-w-0">
+                        <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-graphite-400">
+                          {modelo.tipoDeteccao}
+                        </p>
+                        <h3 className="mt-0.5 truncate font-display text-[17.5px] font-600 uppercase tracking-[0.01em] text-navy-900">
+                          {modelo.nome}
+                        </h3>
+                        <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[12px] text-graphite-500">
+                          <Cpu className="h-3 w-3" />v{modelo.versao} · publicado em {formatDate(modelo.publicadoEm)}
+                        </p>
                       </div>
-                    ))}
-                  </div>
+                      <Badge variant={modelo.ativo ? 'success' : 'default'} className="shrink-0">
+                        {modelo.ativo ? 'Ativo' : 'Aposentado'}
+                      </Badge>
+                    </div>
 
-                  {/* operação */}
-                  <dl className="grid grid-cols-2 gap-3 border-t border-border pt-3">
-                    <div className="flex items-start gap-2">
-                      <Gauge className="mt-0.5 h-3.5 w-3.5 text-graphite-300" />
-                      <div>
-                        <dt className="tech-label">Limiar de confiança</dt>
-                        <dd className="font-mono text-[13.5px] tabular-nums text-graphite-900">{(m.threshold * 100).toFixed(0)}%</dd>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <p className="tech-label">Limiar</p>
+                          <p className="mt-0.5 font-mono text-[15px] font-600 tabular-nums text-graphite-900">
+                            {pct(Number(modelo.limiarConfianca) * 100)}
+                          </p>
+                          <p className="text-[11px] text-graphite-400">confiança mínima</p>
+                        </div>
+                        <div>
+                          <p className="tech-label">Falso positivo</p>
+                          <p
+                            className={cn(
+                              'mt-0.5 font-mono text-[15px] font-600 tabular-nums',
+                              !desempenho
+                                ? 'text-graphite-400'
+                                : desempenho.taxa > 0.25
+                                  ? 'text-status-critical'
+                                  : 'text-status-success',
+                            )}
+                          >
+                            {desempenho ? pct(desempenho.taxa * 100) : '—'}
+                          </p>
+                          <p className="text-[11px] text-graphite-400">
+                            {desempenho ? `${desempenho.falsosPositivos}/${desempenho.totalTriado} triadas` : 'sem triagem'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="flex items-center gap-1 tech-label">
+                            <Camera className="h-3 w-3" />
+                            Câmeras
+                          </p>
+                          <p className="mt-0.5 font-mono text-[15px] font-600 tabular-nums text-graphite-900">
+                            {String(cameras).padStart(2, '0')}
+                          </p>
+                          <p className="text-[11px] text-graphite-400">usando esta versão</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <Timer className="mt-0.5 h-3.5 w-3.5 text-graphite-300" />
-                      <div>
-                        <dt className="tech-label">Latência média</dt>
-                        <dd className="font-mono text-[13.5px] tabular-nums text-graphite-900">{m.latencyMs} ms</dd>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <Activity className="mt-0.5 h-3.5 w-3.5 text-graphite-300" />
-                      <div>
-                        <dt className="tech-label">Detecções hoje</dt>
-                        <dd className="font-mono text-[13.5px] tabular-nums text-graphite-900">{m.detectionsToday}</dd>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <Cpu className="mt-0.5 h-3.5 w-3.5 text-graphite-300" />
-                      <div>
-                        <dt className="tech-label">Câmeras</dt>
-                        <dd className="font-mono text-[13.5px] tabular-nums text-graphite-900">{modelCameras.length}</dd>
-                      </div>
-                    </div>
-                  </dl>
 
-                  {/* triagem */}
-                  <div className="rounded-[3px] border border-border p-3">
-                    <div className="flex items-baseline justify-between">
-                      <span className="tech-label">Confirmadas na triagem</span>
-                      <span className="font-mono text-[13px] font-600 tabular-nums text-status-success">{pct(m.confirmedRate)}</span>
-                    </div>
-                    <Progress value={m.confirmedRate} className="mt-2 h-1.5" indicatorClassName="bg-status-success" />
-                    <p className="mt-2 text-[12.5px] text-graphite-500">
-                      Falsos positivos: <span className="font-mono text-status-warning">{pct(m.falsePositiveRate)}</span> — cada
-                      descarte registrado pelo engenheiro volta como dado rotulado para o próximo treino.
-                    </p>
-                  </div>
+                      {desempenho && desempenho.totalTriado > 0 && (
+                        <div className="border-t border-border pt-3">
+                          <div className="flex items-baseline justify-between">
+                            <span className="tech-label">Acerto na triagem</span>
+                            <span className="font-mono text-[13px] font-600 tabular-nums text-navy-900">
+                              {pct((1 - desempenho.taxa) * 100)}
+                            </span>
+                          </div>
+                          <Progress value={(1 - desempenho.taxa) * 100} className="mt-1.5 h-1.5" />
+                          <p className="mt-1 text-[11.5px] text-graphite-400">
+                            Fração das detecções triadas que o engenheiro confirmou.
+                          </p>
+                        </div>
+                      )}
 
-                  {/* classes */}
-                  <div>
-                    <p className="tech-label mb-1.5">Classes detectadas</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {m.classes.map((c) => (
-                        <span
-                          key={c}
-                          className="rounded-[2px] border border-graphite-200 bg-white px-1.5 py-0.5 font-mono text-[10px] tracking-[0.06em] text-graphite-600"
+                      {metricas.length > 0 && (
+                        <div className="space-y-2 border-t border-border pt-3">
+                          <p className="tech-label">Métricas do treino</p>
+                          {metricas.map((m) => (
+                            <div key={m.chave}>
+                              <div className="flex items-baseline justify-between">
+                                <span className="text-[12.5px] text-graphite-600">{m.chave}</span>
+                                <span className="font-mono text-[12.5px] tabular-nums text-graphite-900">
+                                  {m.valor.toFixed(1)}%
+                                </span>
+                              </div>
+                              <Progress value={m.valor} className="mt-1 h-1" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {modelo.hashArtefato && (
+                        <p
+                          className="flex items-center gap-1.5 border-t border-border pt-3 font-mono text-[10.5px] text-graphite-400"
+                          title={modelo.hashArtefato}
                         >
-                          {c}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                          <Fingerprint className="h-3 w-3 shrink-0" />
+                          {modelo.hashArtefato.slice(0, 32)}…
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
 
-                  <p className="border-t border-border pt-3 font-mono text-[10.5px] uppercase tracking-[0.1em] text-graphite-400">
-                    Publicado em {formatDate(m.publishedAt)}
-                  </p>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-
-        <div className="rounded-md border border-navy-800/15 bg-navy-800/[0.04] px-4 py-3.5">
-          <p className="font-display text-[13px] font-600 uppercase tracking-[0.12em] text-navy-900">
-            Por que a IA não fecha a ocorrência sozinha
-          </p>
-          <p className="mt-1 max-w-4xl text-[13.5px] leading-relaxed text-graphite-600">
-            Nenhum modelo aqui passa de 95% de precisão. Numa obra, um falso positivo interdita uma frente de serviço sem
-            necessidade e um falso negativo deixa um risco em pé. Por isso a saída do modelo é uma recomendação com evidência
-            anexada: quem assina a não conformidade é o engenheiro responsável, com nome, CREA e horário registrados.
-          </p>
-        </div>
+            <SemDadoNoBackend>
+              A <b>taxa de falso positivo</b> acima é real: vem de{' '}
+              <code className="font-mono text-[11.5px]">/painel/resumo</code>, por versão de modelo, sobre as detecções já
+              triadas. Já <b>precision/recall/F1</b> só aparecem se tiverem sido gravados no campo{' '}
+              <code className="font-mono text-[11.5px]">metricas</code> na publicação — o backend não os recalcula. Saíram
+              da tela: latência de inferência, GPU e histórico de retreino, que não existem no schema.
+            </SemDadoNoBackend>
+          </>
+        )}
       </PageBody>
     </>
   )

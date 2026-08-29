@@ -15,7 +15,6 @@ import { SeverityBadge, AlertStatusBadge } from '@/components/shared/StatusBadge
 import { useAppStore } from '@/store/AppStore'
 import { usuarioDemo } from '@/lib/api/client'
 import { categoryLabel } from '@/components/alerts/AlertCard'
-import { getModelByCode } from '@/data/aiModels'
 import { cn, formatDate, formatTime } from '@/lib/utils'
 import type { Severity } from '@/types'
 
@@ -30,7 +29,7 @@ const dismissReasons = [
 export default function AlertDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
-  const { alerts, nonConformities, confirmAlert, dismissAlert } = useAppStore()
+  const { alerts, nonConformities, modelos, confirmAlert, dismissAlert } = useAppStore()
 
   const alert = alerts.find((a) => a.id === id || a.code === id)
   const [showBoxes, setShowBoxes] = React.useState(true)
@@ -60,10 +59,33 @@ export default function AlertDetail() {
     )
   }
 
-  const model = getModelByCode(alert.modelCode)
+  // Modelo real do catálogo (`/modelos-ia`), casado por nome+versão — a
+  // combinação é única no backend (índice ux_modelo_nome_versao). Antes vinha
+  // de um catálogo fixo em src/data/aiModels.ts, cujo limiar não tinha
+  // relação com o que o backend usa para descartar detecção.
+  const model = modelos.find((m) => m.nome === alert.modelName && m.versao === alert.modelVersion)
   const linkedNC = nonConformities.find((n) => n.id === alert.nonConformityId)
   const stage = alert.status === 'pending' ? 'triage' : alert.status === 'confirmed' ? 'nonconformity' : 'triage'
-  const aboveThreshold = model ? alert.confidence / 100 >= model.threshold : true
+  const aboveThreshold = model ? alert.confidence / 100 >= Number(model.limiarConfianca) : true
+
+  /** Lê uma métrica de treino do jsonb `metricas`; '—' quando não foi gravada. */
+  const metricaDoTreino = (chave: string): string => {
+    const valor = model?.metricas?.[chave]
+    if (typeof valor !== 'number') return '—'
+    return `${(valor <= 1 ? valor * 100 : valor).toFixed(1)}%`
+  }
+
+  /** Desempenho observado deste modelo nas detecções já carregadas. */
+  const desempenho = (() => {
+    if (!model) return { taxaFalsoPositivo: '—', triadas: '—' }
+    const doModelo = alerts.filter((a) => a.modelName === model.nome && a.modelVersion === model.versao)
+    const triadas = doModelo.filter((a) => a.status !== 'pending')
+    const descartadas = doModelo.filter((a) => a.status === 'dismissed')
+    return {
+      taxaFalsoPositivo: triadas.length ? `${((descartadas.length / triadas.length) * 100).toFixed(1)}%` : '—',
+      triadas: `${triadas.length}/${doModelo.length}`,
+    }
+  })()
 
   const handleConfirm = async () => {
     await confirmAlert(alert.id, { severity, responsible: usuarioDemo()?.nome ?? '', deadline: '' })
@@ -187,7 +209,7 @@ export default function AlertDetail() {
                   <div className="mb-1.5 flex items-baseline justify-between">
                     <span className="tech-label">Confiança da detecção</span>
                     <span className="font-mono text-[13px] tabular-nums text-graphite-500">
-                      limiar {model ? (model.threshold * 100).toFixed(0) : '80'}%
+                      limiar {model ? (Number(model.limiarConfianca) * 100).toFixed(0) : '—'}%
                     </span>
                   </div>
                   <div className="relative h-8 overflow-hidden rounded-[3px] bg-graphite-100">
@@ -201,7 +223,7 @@ export default function AlertDetail() {
                     {model && (
                       <span
                         className="absolute top-0 h-full border-l-2 border-dashed border-navy-900/50"
-                        style={{ left: `${model.threshold * 100}%` }}
+                        style={{ left: `${Number(model.limiarConfianca) * 100}%` }}
                       />
                     )}
                   </div>
@@ -216,10 +238,14 @@ export default function AlertDetail() {
 
                 <div className="grid grid-cols-2 gap-4 border-t border-border pt-3 sm:grid-cols-4">
                   {[
-                    { label: 'Precisão', value: model ? `${model.precision}%` : '—' },
-                    { label: 'Recall', value: model ? `${model.recall}%` : '—' },
-                    { label: 'Falsos positivos', value: model ? `${model.falsePositiveRate}%` : '—' },
-                    { label: 'Latência', value: model ? `${model.latencyMs} ms` : '—' },
+                    // Precisão/recall só existem se tiverem sido gravados no
+                    // jsonb `metricas` na publicação do modelo — o backend não
+                    // os recalcula. Falso positivo e triagem são derivados das
+                    // detecções reais deste modelo.
+                    { label: 'Precisão', value: metricaDoTreino('precision') },
+                    { label: 'Recall', value: metricaDoTreino('recall') },
+                    { label: 'Falsos positivos', value: desempenho.taxaFalsoPositivo },
+                    { label: 'Detecções triadas', value: desempenho.triadas },
                   ].map((m) => (
                     <div key={m.label}>
                       <p className="tech-label">{m.label}</p>

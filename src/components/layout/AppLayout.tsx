@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 
 /**
  * Estrutura da central de operações: sidebar fixa, topbar com o contexto da obra
@@ -39,7 +40,15 @@ export function AppLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onOpenMobileNav={() => setMobileOpen(true)} />
         <main ref={mainRef} className="relative flex-1 overflow-y-auto blueprint-grid">
-          <Outlet />
+          {/*
+            O boundary fica AQUI, e não em volta de <Routes/>: assim um erro
+            de render derruba só a área de conteúdo — sidebar e topbar
+            continuam de pé e o usuário consegue navegar para outra tela em
+            vez de ficar com a página em branco.
+          */}
+          <ErrorBoundary chaveReset={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

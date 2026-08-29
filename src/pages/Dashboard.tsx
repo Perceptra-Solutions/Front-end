@@ -11,12 +11,11 @@ import { NCTable } from '@/components/nonconformities/NCTable'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAppStore } from '@/store/AppStore'
-import { currentWork } from '@/data/works'
 import { formatDateTechnical, pct } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 
 export default function Dashboard() {
-  const { alerts, nonConformities, actionPlans, kpis } = useAppStore()
+  const { alerts, nonConformities, actionPlans, kpis, obraAtual } = useAppStore()
   const navigate = useNavigate()
   const [clock, setClock] = React.useState(() => new Date())
 
@@ -32,8 +31,8 @@ export default function Dashboard() {
   return (
     <>
       <PageHeader
-        eyebrow={`Visão geral · ${currentWork.code}`}
-        title={currentWork.name}
+        eyebrow={`Visão geral · ${obraAtual?.codigo ?? '—'}`}
+        title={obraAtual?.nome ?? 'Carregando obra…'}
         description="Monitoramento inteligente de qualidade, segurança e conformidade."
         meta={[
           { label: 'Data', value: formatDateTechnical(clock) },
@@ -53,16 +52,19 @@ export default function Dashboard() {
         {/* faixa de indicadores */}
         <section>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {/*
+              Os sparklines saíram destes cards: eram arrays fixos com o valor
+              real só na última posição, ou seja, uma "história" inventada.
+              O backend não guarda série temporal — ver nota em /reports.
+            */}
             <KpiCard
-              label="Índice de conformidade"
-              code="IND-CONF-01"
-              value={pct(kpis.compliance).replace('%', '')}
+              label="Taxa de resolução"
+              code="NCs encerradas / total"
+              value={pct(kpis.taxaResolucao).replace('%', '')}
               unit="%"
-              hint="Meta do contrato: 92,0%"
+              hint={`${kpis.ncsVencidas} NC(s) com prazo vencido`}
               icon={ShieldCheck}
-              tone="success"
-              trend={{ value: '3,4%', direction: 'up', positive: true }}
-              spark={[88.4, 89.9, 90.6, 91.8, 90.8, 94.2]}
+              tone={kpis.ncsVencidas > 0 ? 'warning' : 'success'}
             />
             <KpiCard
               label="Alertas ativos"
@@ -71,7 +73,6 @@ export default function Dashboard() {
               hint={`${kpis.criticalAlerts} críticos aguardando triagem`}
               icon={Siren}
               tone="critical"
-              spark={[6, 9, 7, 11, 10, kpis.activeAlerts]}
             />
             <KpiCard
               label="Não conformidades"
@@ -80,7 +81,6 @@ export default function Dashboard() {
               hint={`${kpis.dueToday} vencendo hoje`}
               icon={TriangleAlert}
               tone="warning"
-              spark={[11, 10, 9, 8, 8, kpis.openNCs]}
             />
             <KpiCard
               label="Câmeras online"
@@ -90,7 +90,6 @@ export default function Dashboard() {
               hint={`${kpis.camerasTotal > 0 ? Math.round((kpis.camerasOnline / kpis.camerasTotal) * 100) : 0}% do parque operacional`}
               icon={Camera}
               tone="neutral"
-              spark={[20, 19, 20, 18, 19, kpis.camerasOnline]}
             />
           </div>
         </section>

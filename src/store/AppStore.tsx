@@ -1,6 +1,13 @@
 import * as React from 'react'
-import { ApiError, ApiIndisponivelError, usuarioDemo } from '@/lib/api/client'
-import { listarCameras, listarLocais, listarModelosIa, listarRequisitosNorma, listarUsuarios } from '@/lib/api/cadastros'
+import { ApiError, ApiIndisponivelError, garantirUsuario, usuarioDemo, type UsuarioAutenticado } from '@/lib/api/client'
+import {
+  listarCameras,
+  listarLocais,
+  listarModelosIa,
+  listarObras,
+  listarRequisitosNorma,
+  listarUsuarios,
+} from '@/lib/api/cadastros'
 import { abrirNcDeDeteccao, descartarDeteccao, listarDeteccoes } from '@/lib/api/deteccoes'
 import { anexarEvidencia, listarEvidencias } from '@/lib/api/evidencias'
 import {
@@ -11,7 +18,7 @@ import {
   listarNaoConformidades,
   registrarVerificacao,
 } from '@/lib/api/naoConformidades'
-import type { NaoConformidadeApi, SeveridadeNc } from '@/lib/api/types'
+import type { CameraApi, ModeloIaApi, NaoConformidadeApi, ObraApi, SeveridadeNc } from '@/lib/api/types'
 import {
   acaoCorretivaParaActionPlan,
   cadastrosVazios,
@@ -52,6 +59,20 @@ interface AppStoreValue {
   loading: boolean
   /** null quando a última tentativa de falar com o backend deu certo. */
   erroConexao: string | null
+  /**
+   * Usuário do token e obra em contexto, vindos do backend. Existem aqui
+   * porque Topbar, Dashboard, Mapa, Gêmeo Digital e Perfil liam os mesmos
+   * dois objetos de `src/data/` (um "Residencial Horizonte" e um "Marcos
+   * Andrade" que não existem no banco).
+   *
+   * `obraAtual` é a primeira obra retornada: sem seletor de obra na UI e sem
+   * vínculo usuário↔obra no backend, não há critério melhor — e é honesto,
+   * porque a POC opera uma obra por vez.
+   */
+  usuario: UsuarioAutenticado | null
+  obraAtual: ObraApi | null
+  cameras: CameraApi[]
+  modelos: ModeloIaApi[]
   alerts: Alert[]
   nonConformities: NonConformity[]
   actionPlans: ActionPlan[]
@@ -65,8 +86,9 @@ interface AppStoreValue {
   rejectVerification: (planId: string, note: string) => Promise<void>
   resetDemo: () => void
   kpis: {
-    compliance: number
-    complianceDelta: number
+    /** NCs encerradas / total (exclui canceladas). Derivado, e o rótulo diz isso. */
+    taxaResolucao: number
+    ncsVencidas: number
     activeAlerts: number
     criticalAlerts: number
     openNCs: number
@@ -100,6 +122,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [evidences, setEvidences] = React.useState<Evidence[]>([])
   const [camerasOnline, setCamerasOnline] = React.useState(0)
   const [camerasTotal, setCamerasTotal] = React.useState(0)
+  const [usuario, setUsuario] = React.useState<UsuarioAutenticado | null>(null)
+  const [obraAtual, setObraAtual] = React.useState<ObraApi | null>(null)
+  const [cameras, setCameras] = React.useState<CameraApi[]>([])
+  const [modelos, setModelos] = React.useState<ModeloIaApi[]>([])
 
   const cadRef = React.useRef<Cadastros>(cadastrosVazios())
   const ncsApiRef = React.useRef<Map<string, NaoConformidadeApi>>(new Map())
@@ -107,13 +133,23 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const carregarTudo = React.useCallback(async () => {
     setLoading(true)
     try {
-      const [usuarios, cameras, locais, modelos, requisitos] = await Promise.all([
+      // Antes de tudo: sem isto, num carregamento com token já em cache o
+      // `usuarioDemo()` fica null e as ações que dependem do ator (criar
+      // plano, abrir NC) falham em silêncio. Ver garantirUsuario().
+      setUsuario(await garantirUsuario())
+
+      const [usuarios, cameras, locais, modelos, requisitos, obras] = await Promise.all([
         listarUsuarios(),
         listarCameras(),
         listarLocais(),
         listarModelosIa(),
         listarRequisitosNorma(),
+        listarObras(),
       ])
+
+      setObraAtual(obras.itens[0] ?? null)
+      setCameras(cameras.itens)
+      setModelos(modelos.itens)
 
       const cad = cadastrosVazios()
       for (const u of usuarios.itens) cad.usuariosPorId.set(u.id, u)
@@ -337,10 +373,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const kpis = React.useMemo(() => {
     const active = alerts.filter((a) => a.status === 'pending')
     const open = nonConformities.filter((n) => n.status !== 'resolved')
+    const hoje = new Date().toISOString().slice(0, 10)
+    const encerradas = nonConformities.filter((n) => n.status === 'resolved')
+
     return {
-      // Sem indicador equivalente no backend — decorativo, ver decisão do produto.
-      compliance: 91.8,
-      complianceDelta: 3.4,
+      // Antes era `compliance: 91.8` fixo, com tendência "+3,4%" inventada.
+      // Agora é a fração real de NCs encerradas sobre o total carregado.
+      taxaResolucao: nonConformities.length > 0 ? (encerradas.length / nonConformities.length) * 100 : 0,
+      ncsVencidas: open.filter((n) => n.deadline.slice(0, 10) < hoje).length,
       activeAlerts: active.length,
       criticalAlerts: active.filter((a) => a.severity === 'critical').length,
       openNCs: open.length,
@@ -353,6 +393,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const value: AppStoreValue = {
     loading,
     erroConexao,
+    usuario,
+    obraAtual,
+    cameras,
+    modelos,
     alerts,
     nonConformities,
     actionPlans,

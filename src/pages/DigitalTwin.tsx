@@ -8,14 +8,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useAppStore } from '@/store/AppStore'
-import { cameras } from '@/data/cameras'
-import { currentWork } from '@/data/works'
 import { cn } from '@/lib/utils'
 
 const FLOORS = 12
 
 export default function DigitalTwin() {
-  const { alerts, nonConformities } = useAppStore()
+  const { alerts, nonConformities, obraAtual, cameras } = useAppStore()
   const [hovered, setHovered] = React.useState<string | null>(null)
   const [phase, setPhase] = React.useState<TwinPhase>('plan')
   const [built, setBuilt] = React.useState(0)
@@ -41,7 +39,9 @@ export default function DigitalTwin() {
   }, [])
 
   const withNC = floors.filter((f) => f.ncCount > 0).length
-  const blockCameras = cameras.filter((c) => c.blockCode === 'BLOCO A')
+  // Sem geometria no backend, não há como saber qual câmera fica em qual
+  // bloco do modelo 3D — a lista mostra as câmeras reais da obra.
+  const blockCameras = cameras
 
   return (
     <>
@@ -90,7 +90,7 @@ export default function DigitalTwin() {
                 </span>
               </div>
               <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-graphite-400">
-                {currentWork.code} · BL-A · {currentWork.coordinates}
+                {obraAtual?.codigo ?? '—'} · {obraAtual?.cidade ?? ''} {obraAtual?.uf ?? ''}
               </span>
             </div>
           </Card>
@@ -149,15 +149,24 @@ export default function DigitalTwin() {
                 <Camera className="h-4 w-4 text-graphite-300" />
               </CardHeader>
               <CardContent className="space-y-2">
-                {blockCameras.slice(0, 5).map((c) => (
-                  <div key={c.id} className="flex items-center justify-between gap-3">
-                    <span className="font-mono text-[12px] text-graphite-700">{c.code}</span>
-                    <span className="truncate text-[12.5px] text-graphite-500">{c.locationCode}</span>
-                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-graphite-400">
-                      {String(c.alertsToday).padStart(2, '0')} alertas
-                    </span>
-                  </div>
-                ))}
+                {blockCameras.slice(0, 5).map((c) => {
+                  // Detecções reais desta câmera entre as já carregadas.
+                  const deteccoes = alerts.filter((a) => a.cameraId === c.id).length
+                  return (
+                    <div key={c.id} className="flex items-center justify-between gap-3">
+                      <span className="font-mono text-[12px] text-graphite-700">{c.identificador}</span>
+                      <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-graphite-400">
+                        {c.status}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] tabular-nums text-graphite-400">
+                        {String(deteccoes).padStart(2, '0')} detecções
+                      </span>
+                    </div>
+                  )
+                })}
+                {blockCameras.length === 0 && (
+                  <p className="text-[12.5px] text-graphite-400">Nenhuma câmera cadastrada.</p>
+                )}
                 <p className="border-t border-border pt-2.5 text-[12.5px] leading-snug text-graphite-500">
                   O modelo usa a mesma base de dados da operação: os pavimentos em vermelho são os que têm não conformidade
                   aberta agora.
