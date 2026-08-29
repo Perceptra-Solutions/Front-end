@@ -1,17 +1,8 @@
-import * as React from 'react'
 import { Radio, TriangleAlert } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { abrirFeedMonitoramento, type ResultadoMonitoramentoApi } from '@/lib/api/monitoramento'
-import { useToast } from '@/store/toast'
+import type { ItemFeed } from './useFeedMonitoramento'
 import { cn } from '@/lib/utils'
-
-const LIMITE_HISTORICO = 8
-
-interface ItemFeed extends ResultadoMonitoramentoApi {
-  /** chave local — `imagemOriginal` sozinho não é garantidamente único se dois eventos chegarem no mesmo ms em testes locais. */
-  chave: string
-}
 
 function Deteccoes({ item }: { item: ItemFeed }) {
   const semOcorrencia = item.deteccoesEpi.length === 0 && item.deteccoesFissura.length === 0
@@ -32,60 +23,21 @@ function Deteccoes({ item }: { item: ItemFeed }) {
   )
 }
 
+interface LiveFeedMonitoramentoProps {
+  itens: ItemFeed[]
+  conectado: boolean
+}
+
 /**
- * Feed ao vivo do pipeline AWS (Raspberry Pi -> S3 -> SQS -> inferência ->
- * S3 -> aqui, ver ARQUITETURA_AWS.md). Conecta em `GET /monitoramento/eventos`
- * (SSE) e mostra cada imagem processada assim que chega — sem persistir nada,
- * é puramente visual (decisão de escopo: não vira Deteccao/NC no banco).
+ * Painel do feed ao vivo do pipeline AWS (Raspberry Pi -> S3 -> SQS ->
+ * inferência -> S3 -> aqui, ver ARQUITETURA_AWS.md). O estado vem do
+ * `useFeedMonitoramento` da página — este componente só desenha.
  *
- * "Câmera ao vivo" aqui é a imagem mais recente trocando a cada novo frame
- * (não é vídeo contínuo — o pipeline manda um frame anotado a cada ~2-3s,
- * ver prompt_para_backend_web.md), com um histórico curto logo abaixo.
+ * "Ao vivo" aqui é a imagem mais recente trocando a cada novo frame (não é
+ * vídeo contínuo — o pipeline manda um frame anotado por segundo, ver
+ * hardware_client/config.py), com um histórico curto logo abaixo.
  */
-export function LiveFeedMonitoramento() {
-  const [itens, setItens] = React.useState<ItemFeed[]>([])
-  const [conectado, setConectado] = React.useState(false)
-  const { push } = useToast()
-
-  React.useEffect(() => {
-    let limpar: (() => void) | undefined
-    let cancelado = false
-
-    abrirFeedMonitoramento(
-      (resultado) => {
-        if (cancelado) return
-        setItens((prev) => [
-          { ...resultado, chave: `${resultado.imagemOriginal}-${resultado.recebidoEm}` },
-          ...prev,
-        ].slice(0, LIMITE_HISTORICO))
-
-        if (resultado.alertas.length > 0) {
-          push({
-            tone: 'warning',
-            title: 'Alerta da obra',
-            description: resultado.alertas.map((a) => a.mensagem).join(' · '),
-          })
-        }
-      },
-      setConectado,
-    )
-      .then((fn) => {
-        if (cancelado) fn()
-        else limpar = fn
-      })
-      .catch(() => {
-        // Backend inacessível (ex.: sem Postgres neste ambiente) — o painel
-        // fica em "aguardando conexão" em vez de propagar erro não tratado.
-        if (!cancelado) setConectado(false)
-      })
-
-    return () => {
-      cancelado = true
-      limpar?.()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
+export function LiveFeedMonitoramento({ itens, conectado }: LiveFeedMonitoramentoProps) {
   const [atual, ...anteriores] = itens
   const temAlertaAtual = (atual?.alertas.length ?? 0) > 0
 
@@ -93,7 +45,7 @@ export function LiveFeedMonitoramento() {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <CardTitle>Feed ao vivo · Raspberry Pi</CardTitle>
+          <CardTitle>CAM-01 · Raspberry Pi</CardTitle>
           <span
             className={cn(
               'flex items-center gap-1.5 rounded-[2px] px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.1em]',
