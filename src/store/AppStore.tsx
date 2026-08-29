@@ -133,6 +133,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
       const ncsAtivas = ncs.itens.filter((nc) => nc.status !== 'CANCELADA')
       for (const nc of ncs.itens) cad.ncCodigoPorId.set(nc.id, nc.codigo)
+      // Antes do map de deteccaoParaAlert (abaixo) — é ele que consulta este cadastro.
+      for (const e of todasEvidencias.itens) if (e.deteccaoId) cad.evidenciaPorDeteccaoId.set(e.deteccaoId, e)
 
       const ncsPorId = new Map(ncsAtivas.map((nc) => [nc.id, nc]))
       ncsApiRef.current = ncsPorId

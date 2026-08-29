@@ -4,6 +4,7 @@ import { ArrowLeft, Bot, CheckCircle2, Eye, EyeOff, Radar, ShieldAlert, ThumbsDo
 import { PageBody, PageHeader } from '@/components/shared/PageHeader'
 import { FlowTimeline } from '@/components/shared/FlowTimeline'
 import { DetectionFrame } from '@/components/cameras/DetectionFrame'
+import { EvidenciaImage } from '@/components/shared/EvidenciaImage'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -114,25 +115,38 @@ export default function AlertDetail() {
                     Saída do detector · {alert.modelCode}
                   </span>
                 </div>
-                <button
-                  onClick={() => setShowBoxes((v) => !v)}
-                  className="flex items-center gap-1.5 rounded-[2px] border border-white/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-white/70 transition-colors hover:border-technical-400 hover:text-white"
-                >
-                  {showBoxes ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                  {showBoxes ? 'Ocultar caixas' : 'Mostrar caixas'}
-                </button>
+                {/* Foto real (pipeline AWS) já vem com as caixas desenhadas nos
+                    pixels pelo serviço de inferência — o toggle só faz
+                    sentido pra cena 3D decorativa. */}
+                {!alert.evidenciaId && (
+                  <button
+                    onClick={() => setShowBoxes((v) => !v)}
+                    className="flex items-center gap-1.5 rounded-[2px] border border-white/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-white/70 transition-colors hover:border-technical-400 hover:text-white"
+                  >
+                    {showBoxes ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                    {showBoxes ? 'Ocultar caixas' : 'Mostrar caixas'}
+                  </button>
+                )}
               </div>
 
-              <DetectionFrame
-                variant={alert.sceneVariant}
-                boxes={alert.boxes}
-                cameraCode={alert.cameraCode}
-                locationLabel={alert.locationLabel}
-                timestamp={alert.detectedAt}
-                showBoxes={showBoxes}
-                scanning={alert.status === 'pending'}
-                className="aspect-video w-full"
-              />
+              {alert.evidenciaId ? (
+                <EvidenciaImage
+                  evidenciaId={alert.evidenciaId}
+                  fallbackVariant={alert.sceneVariant}
+                  className="aspect-video w-full"
+                />
+              ) : (
+                <DetectionFrame
+                  variant={alert.sceneVariant}
+                  boxes={alert.boxes}
+                  cameraCode={alert.cameraCode}
+                  locationLabel={alert.locationLabel}
+                  timestamp={alert.detectedAt}
+                  showBoxes={showBoxes}
+                  scanning={alert.status === 'pending'}
+                  className="aspect-video w-full"
+                />
+              )}
 
               {/* classes detectadas */}
               <div className="border-t border-navy-700/60 px-4 py-3">

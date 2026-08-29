@@ -43,6 +43,10 @@ export interface Alert {
   status: AlertStatus
   boxes: BoundingBox[]
   sceneVariant: 'slab' | 'facade' | 'yard' | 'shaft' | 'basement'
+  /** Presente quando a detecção veio do pipeline AWS (Raspberry Pi) e tem
+   * foto real associada — nesse caso a tela mostra a foto em vez da cena
+   * 3D decorativa (ver EvidenciaImage). Ausente nos dados de seed/demo. */
+  evidenciaId?: string
   nonConformityId?: string
   reviewedBy?: string
   reviewedAt?: string

@@ -3,6 +3,7 @@ import { ArrowRight, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { SeverityBadge, AlertStatusBadge } from '@/components/shared/StatusBadge'
+import { EvidenciaImage } from '@/components/shared/EvidenciaImage'
 import { DetectionFrame } from '@/components/cameras/DetectionFrame'
 import { cn, formatTime } from '@/lib/utils'
 import type { Alert } from '@/types'
@@ -47,17 +48,26 @@ export function AlertCard({ alert, className }: AlertCardProps) {
         )}
       />
 
-      {/* frame da detecção */}
+      {/* frame da detecção — foto real quando existe (pipeline AWS), senão a cena 3D decorativa */}
       <div className="relative w-full shrink-0 sm:w-[188px]">
-        <DetectionFrame
-          variant={alert.sceneVariant}
-          boxes={alert.boxes.slice(0, 2)}
-          cameraCode={alert.cameraCode}
-          locationLabel={alert.locationLabel}
-          timestamp={alert.detectedAt}
-          compact
-          className="h-[128px] w-full sm:h-full"
-        />
+        {alert.evidenciaId ? (
+          <EvidenciaImage
+            evidenciaId={alert.evidenciaId}
+            fallbackVariant={alert.sceneVariant}
+            compact
+            className="h-[128px] w-full sm:h-full"
+          />
+        ) : (
+          <DetectionFrame
+            variant={alert.sceneVariant}
+            boxes={alert.boxes.slice(0, 2)}
+            cameraCode={alert.cameraCode}
+            locationLabel={alert.locationLabel}
+            timestamp={alert.detectedAt}
+            compact
+            className="h-[128px] w-full sm:h-full"
+          />
+        )}
       </div>
 
       {/* conteúdo */}

@@ -34,6 +34,10 @@ export interface Cadastros {
   requisitosPorId: Map<string, RequisitoNormaApi>
   /** Preenchido com a própria lista de NCs carregada — usado para resolver reincidência (recurrenceOf). */
   ncCodigoPorId: Map<string, string>
+  /** Evidência (IA) da própria detecção, quando existe — 1:1 na prática,
+   * mesmo a coluna não sendo unique (ver PersistenciaDeteccaoService no
+   * backend). Usado pra trocar a cena 3D decorativa pela foto real. */
+  evidenciaPorDeteccaoId: Map<string, EvidenciaApi>
 }
 
 export function cadastrosVazios(): Cadastros {
@@ -44,6 +48,7 @@ export function cadastrosVazios(): Cadastros {
     usuariosPorId: new Map(),
     requisitosPorId: new Map(),
     ncCodigoPorId: new Map(),
+    evidenciaPorDeteccaoId: new Map(),
   }
 }
 
@@ -82,7 +87,9 @@ function severidadePelaConfianca(confianca: number): Alert['severity'] {
 }
 
 const CLASSES_ESTRUTURAIS = new Set(['TRINCA', 'FISSURA', 'INFILTRACAO'])
-const CLASSES_EPI = new Set(['SEM_CAPACETE', 'SEM_CINTO', 'SEM_LUVA'])
+// SEM_COLETE e SEM_MASCARA vêm do pipeline AWS (Raspberry Pi + epi_model,
+// ver ARQUITETURA_AWS.md) — as três primeiras são do seed de demo.
+const CLASSES_EPI = new Set(['SEM_CAPACETE', 'SEM_CINTO', 'SEM_LUVA', 'SEM_COLETE', 'SEM_MASCARA'])
 
 function categoriaPelaClasse(classe: string): Alert['category'] {
   if (CLASSES_EPI.has(classe)) return 'epi'
@@ -146,6 +153,7 @@ export function deteccaoParaAlert(d: DeteccaoApi, cad: Cadastros): Alert {
         ]
       : [],
     sceneVariant: cenaPelaClasse(d.classe),
+    evidenciaId: cad.evidenciaPorDeteccaoId.get(d.id)?.id,
     nonConformityId: d.naoConformidade?.id,
     reviewedBy: d.triadoPor ? nomeUsuario(d.triadoPor, cad) : undefined,
     reviewedAt: d.triadoEm ?? undefined,
